@@ -1,4 +1,5 @@
 # 对每一个蛋白质等fasta序列文件，使用某种结构域的正则表达式等进行匹配，返回每个蛋白质序列中该蛋白质匹配的hits
+# 参考https://github.com/iankorf/MCB185/blob/main/course/unit6-data.md
 
 # 01 主要使用re.finditer（非重叠匹配，每次匹配的时候都将上一次匹配的终点作为下一次匹配的起点，所以本质上是非重叠匹配）
 
