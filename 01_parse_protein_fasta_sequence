@@ -1,3 +1,7 @@
+# 主要是处理批量蛋白质fasta序列文件，然后获取蛋白质id：序列的字典文件
+
+# 01
+
 def parse_fasta(fasta_file):
     """
     Function:
@@ -39,3 +43,69 @@ def parse_fasta(fasta_file):
         
     return sequences    
     # 返回最终的蛋白质id+序列的字典 
+
+======================================================================================================================
+# 02
+
+# 当然，类似的函数我们的写法可以有很多：
+
+import gzip
+import sys
+
+def parse_fasta(filename):
+    """
+    从FASTA文件中解析蛋白质序列并返回一个字典，其中键是蛋白质的ID，值是氨基酸序列。
+    
+    Args:
+    filename: str, FASTA格式的蛋白质序列文件路径。
+              如果文件名为 '-'，则从标准输入读取；
+              如果文件名以 '.gz' 结尾，则解压读取。
+    
+    Returns:
+    dict: 包含蛋白质ID和对应氨基酸序列的字典。
+    """
+    # 打开文件
+    if filename == '-':          
+        fp = sys.stdin
+    elif filename.endswith('.gz'): 
+        fp = gzip.open(filename, 'rt')
+    else:                          
+        fp = open(filename)
+
+    fasta_dict = {}
+    name = None
+    seqs = []
+
+    while True:
+        line = fp.readline()
+        if line == '':  # 文件结束
+            break
+        line = line.rstrip()
+        if line.startswith('>'):  # 处理 header 行
+            if len(seqs) > 0:  # 保存前一个序列
+                fasta_dict[name] = ''.join(seqs)
+            # 提取简洁的 ID
+            raw_header = line[1:]  # 去掉 '>'
+            if " " in raw_header:
+                name = raw_header.split()[0]  # 提取第一个字段作为 ID
+            else:
+                name = raw_header  # 如果没有空格，直接使用整个 header
+            seqs = []  # 重置序列列表
+        else:
+            seqs.append(line)  # 收集序列行
+
+    # 保存最后一个序列
+    if name and len(seqs) > 0:
+        fasta_dict[name] = ''.join(seqs)
+
+    fp.close()
+    return fasta_dict
+
+
+
+
+
+
+
+
+
