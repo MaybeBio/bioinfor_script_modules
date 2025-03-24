@@ -1,1 +1,127 @@
 
+
+# 01 主要使用re.finditer（非重叠匹配，每次匹配的时候都将上一次匹配的终点作为下一次匹配的起点，所以本质上是非重叠匹配）
+
+def main(fasta_file,output_file,regular_pattern="C.{2,4}C.{3}[LIVMFYWC].{8}H.{3,5}H"):
+    """
+    Funtion:
+    使用前面定义的函数，解析fasta序列文件，然后使用正则表达式匹配蛋白质序列，最后将匹配到的蛋白质id、匹配到的序列、匹配到的序列的起始和终止位置写入到输出文件中
+    
+    Args:
+    fasta_file: str, fasta格式的蛋白质序列文件的路径，要求同parse_fasta函数中的要求
+    output_file: str, 输出文件的路径
+    regular_pattern: str, 正则表达式的模式，用于匹配蛋白质序列，可以自定义，默认为"C.{2,4}C.{3}[LIVMFYWC].{8}H.{3,5}H"，即默认对C2H2 zinc finger domain进行匹配
+    
+    Returns:
+    返回对输入fasta序列文件的正则表达式匹配结果，写入到输出文件中，即tsv文件，其中包含蛋白质id、匹配到的序列、匹配到的序列的起始和终止位置，1个蛋白质id可能有多个匹配到的序列，每个序列都会单独写入1行
+    
+    """
+    protein_sequences = parse_fasta(fasta_file)
+    # 解析批量蛋白质序列文件之后，获取蛋白质id+序列的字典
+    
+    with open(output_file, "w") as out:
+        # 以写入模式打开输出文件
+        out.write("Protein_ID\tStart\tEnd\tMatched_Sequence\n")
+            
+        for protein_id,current_protein_sequence in protein_sequences.items():
+            current_protein_match = re.finditer(regular_pattern,current_protein_sequence)
+            for match in current_protein_match:
+                start = match.start() # 如果想要1-based的话，需要+1，即start = match.start()+1 
+                end = match.end() # 如果想要1-based的话，需要+1，即end = match.end()+1
+                matched_sequence = match.group()
+                out.write(f"{protein_id}\t{start}\t{end}\t{matched_sequence}\n")
+
+==============================================================================================================================================================================
+
+# 02
+# 或者只是作为一个单纯的module而言，不考虑main的文件操作输出
+
+def main(fasta_file,regular_pattern="C.{2,4}C.{3}[LIVMFYWC].{8}H.{3,5}H"):
+    """
+    Funtion:
+    使用前面01定义的函数，解析fasta序列文件，然后使用正则表达式匹配蛋白质序列，最后将匹配到的蛋白质id、匹配到的序列、匹配到的序列的起始和终止位置输出
+    
+    Args:
+    fasta_file: str, fasta格式的蛋白质序列文件的路径，要求同01 parse_fasta函数中的要求
+    regular_pattern: str, 正则表达式的模式，用于匹配蛋白质序列，可以自定义，默认为"C.{2,4}C.{3}[LIVMFYWC].{8}H.{3,5}H"，即默认对C2H2 zinc finger domain进行匹配
+    
+    Returns:
+    返回对输入fasta序列文件的正则表达式匹配结果，其中包含蛋白质id、匹配到的序列、匹配到的序列的起始和终止位置，1个蛋白质id可能有多个匹配到的序列，每个序列都会单独写入1行
+    
+    """
+    protein_sequences = parse_fasta(fasta_file)
+    # 解析批量蛋白质序列文件之后，获取蛋白质id+序列的字典
+            
+    for protein_id,current_protein_sequence in protein_sequences.items():
+        current_protein_match = re.finditer(regular_pattern,current_protein_sequence)
+        for match in current_protein_match:
+            start = match.start() # 如果想要1-based的话，需要+1，即start = match.start()+1 
+            end = match.end() # 如果想要1-based的话，需要+1，即end = match.end()+1
+            matched_sequence = match.group()
+            print(f"{protein_id}\t{start}\t{end}\t{matched_sequence}\n")
+
+
+==============================================================================================================================================================================
+
+# 03 
+# 考虑到正则表达式的参数显示/默认传入问题，我们还是对None值进行一个判断，03是对02做的一个小小的修改
+
+def main(fasta_file,regular_pattern=None):
+    """
+    Funtion:
+    使用前面01定义的函数，解析fasta序列文件，然后使用正则表达式匹配蛋白质序列，最后将匹配到的蛋白质id、匹配到的序列、匹配到的序列的起始和终止位置输出
+    
+    Args:
+    fasta_file: str, fasta格式的蛋白质序列文件的路径，要求同01 parse_fasta函数中的要求
+    regular_pattern: str, 正则表达式的模式，用于匹配蛋白质序列，可以自定义，默认为"C.{2,4}C.{3}[LIVMFYWC].{8}H.{3,5}H"，即默认对C2H2 zinc finger domain进行匹配
+    
+    Returns:
+    返回对输入fasta序列文件的正则表达式匹配结果，其中包含蛋白质id、匹配到的序列、匹配到的序列的起始和终止位置，1个蛋白质id可能有多个匹配到的序列，每个序列都会单独写入1行
+    
+    """
+    protein_sequences = parse_fasta(fasta_file)
+    # 解析批量蛋白质序列文件之后，获取蛋白质id+序列的字典
+
+    # 如果 regular_pattern 是 None，则使用默认值
+    if regular_pattern is None:
+        regular_pattern = "C.{2,4}C.{3}[LIVMFYWC].{8}H.{3,5}H"
+
+    for protein_id,current_protein_sequence in protein_sequences.items():
+        current_protein_match = re.finditer(regular_pattern,current_protein_sequence)
+        for match in current_protein_match:
+            start = match.start() # 如果想要1-based的话，需要+1，即start = match.start()+1 
+            end = match.end() # 如果想要1-based的话，需要+1，即end = match.end()+1
+            matched_sequence = match.group()
+            print(f"{protein_id}\t{start}\t{end}\t{matched_sequence}\n")
+
+==============================================================================================================================================================================
+
+# 04
+# 此处我们考虑重叠匹配的case（尽管这种情况在生物学中不太常见，尤其是我们没有听说过重叠的结构域case），使用re.search，因为这个函数只输出first匹配
+
+import re
+
+def find_overlapping_matches(pattern, sequence):
+    """
+    查找所有匹配项，包括重叠的部分。
+
+    Args:
+    pattern: str, 正则表达式模式。
+    sequence: str, 要匹配的字符串。
+
+    Returns:
+    list: 包含所有匹配项的列表，每个匹配项是一个 (start, end, match) 元组。
+    """
+    matches = []
+    start = 0
+    while start < len(sequence):
+        match = re.search(pattern, sequence[start:])
+        if not match:
+            break
+        # 记录匹配的起点、终点和匹配的内容
+        match_start = start + match.start()
+        match_end = start + match.end()
+        matches.append((match_start, match_end, match.group()))
+        # 从下一个字符开始继续匹配，允许重叠
+        start = match_start + 1
+    return matches  
