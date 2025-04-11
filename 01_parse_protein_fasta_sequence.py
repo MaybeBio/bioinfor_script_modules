@@ -133,6 +133,7 @@ def parse_uniprot_fasta(path_to_fasta):
             # https://www.runoob.com/python/att-string-find.html，beg=id_start+1即在该开始索引处开始往后找第1个|符号
             value = seq[fasta_start:].replace("\n","")
             # 注意fasta序列中每一行都有换行符，每一行，所以需要置换
+            # 据说uniprot数据库中有些序列会出现U，可以改成V，即value = seq[fasta_start:].replace("\n","").replace('U', 'V')
             proteins_dict[key] = value
         
     return proteins_dict
