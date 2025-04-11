@@ -122,6 +122,7 @@ def parse_uniprot_fasta(path_to_fasta):
         # fasta.read()是读取全部内容
         # split(">")是将读取的内容按">"分割成多个部分，返回的是一个列表，第1个是""空字符        
         # [1:]是从第2个元素开始，因为第1个元素是空字符，需要去除
+        # 如果这里不用[1:]的话，可以在最后面del proteins_dict[""]
         
         proteins_dict = {} # 构造存储最终输出蛋白质id+序列的空字典
         for seq in protein_seqs:
