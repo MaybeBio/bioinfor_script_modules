@@ -100,6 +100,43 @@ def parse_fasta(filename):
     return fasta_dict
 
 
+##############################################################################################################################################################################
+# 03
+
+def parse_uniprot_fasta(path_to_fasta):
+    
+    """
+    Argumrnts:
+    filename:str,输入的fasta序列文件路径
+    每个蛋白质序列的第1行类似于——》
+    ">sp|A8K8V0|ZN785_HUMAN Zinc finger protein 785 OS=Homo sapiens OX=9606 GN=ZNF785 PE=1 SV=1"
+    
+    Returns:
+    返回的是1个元组,每个元组元素是1个字典，包括键值对key-value
+    键可以是蛋白质的id，或者是uniprot的accession号；
+    值是该蛋白质序列的fasta文件
+    
+    """
+    with open(path_to_fasta,"r") as fasta:
+        protein_seqs = fasta.read().split(">")[1:]
+        # fasta.read()是读取全部内容
+        # split(">")是将读取的内容按">"分割成多个部分，返回的是一个列表，第1个是""空字符        
+        # [1:]是从第2个元素开始，因为第1个元素是空字符，需要去除
+        
+        proteins_dict = {} # 构造存储最终输出蛋白质id+序列的空字典
+        for seq in protein_seqs:
+            id_start = seq.find("|")
+            id_end = seq.find("|",id_start+1)
+            key = seq[id_start:id_end+1]
+            
+            fasta_start = seq.find("\n")
+            # https://www.runoob.com/python/att-string-find.html，beg=id_start+1即在该开始索引处开始往后找第1个|符号
+            value = seq[fasta_start:].replace("\n","")
+            # 注意fasta序列中每一行都有换行符，每一行，所以需要置换
+            proteins_dict[key] = value
+        
+    return proteins_dict
+    
 
 
 
