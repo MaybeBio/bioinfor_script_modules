@@ -1,3 +1,5 @@
+# 最终使用的时候以02或者是03为主
+# 01
 def random_seq_generator(length,background_freq:list[float],num_seq=1):
     """
     Args:
@@ -25,7 +27,9 @@ def random_seq_generator(length,background_freq:list[float],num_seq=1):
     random_seq = [list(np.random.choice(seq,size=length,replace=True,p=background_freq)) for i in range(num_seq)] # 默认是有放回抽样
     return random_seq
     
-    
+##############################################################################################################################################################################
+
+# 02
 # 如果写的复杂点，就是提供用于抽样产生随机序列的字符表也设置成1个参数，并且背景频率表我们提供1个字典dict
 def random_seq_generator1(seq_symbol:list[str],length,background_freq:dict,num_seq=1):
     """
@@ -62,7 +66,9 @@ def random_seq_generator1(seq_symbol:list[str],length,background_freq:dict,num_s
     random_seq = [list(np.random.choice(seq_array,size=length,replace=True,p=background_freq_list) for i in range(num_seq))]
     return random_seq
     
-    
+##############################################################################################################################################################################    
+
+# 03
 # 如果不将每一个生成的随机序列转换为list对象的话，可以按照原样保存为str字符串对象
 
 def random_seq_generator2(seq_symbol:list[str],length,background_freq:dict,num_seq=1):
