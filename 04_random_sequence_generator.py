@@ -1,3 +1,4 @@
+# 实际使用中以02-04为主，04比较符合常识
 
 # 01
 def random_seq_generator(length,background_freq:list[float],num_seq=1):
@@ -35,7 +36,7 @@ def random_seq_generator(length,background_freq:list[float],num_seq=1):
     random_seq = [list(np.random.choice(seq,size=length,replace=True,p=background_freq)) for i in range(num_seq)] # 默认是有放回抽样
     return random_seq
     
-
+##############################################################################################################################################################################
 # 02
 # 如果写的复杂点，就是提供用于抽样产生随机序列的字符表也设置成1个参数，并且背景频率表我们提供1个字典dict
 def random_seq_generator1(seq_symbol:list[str],length,background_freq:dict,num_seq=1):
@@ -94,7 +95,7 @@ def random_seq_generator1(seq_symbol:list[str],length,background_freq:dict,num_s
     """
     return random_seq
     
-
+##############################################################################################################################################################################
 # 03
 # 如果不将每一个生成的随机序列转换为list对象的话
 def random_seq_generator2(seq_symbol:list[str],length,background_freq:dict,num_seq=1):
@@ -130,7 +131,7 @@ def random_seq_generator2(seq_symbol:list[str],length,background_freq:dict,num_s
     """
     return random_seq
 
-
+##############################################################################################################################################################################
 # 04
 # 但是我们一般想要的是字符串形式的随机序列，而不是array或者是list形式的对象，也就是最后每一个随机序列最好都是"ACTGTGCA"之类的字符串存储形式
 # 如果想要获取字符串形式的随机序列，需要执行完列表生成式的时候，使用join()函数将其转换为字符串形式
