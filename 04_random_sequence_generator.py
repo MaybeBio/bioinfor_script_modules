@@ -1,4 +1,4 @@
-# 实际使用中以02-04为主，04比较符合常识
+# 实际使用中以02-05为主，04比较符合常识
 
 # 01
 def random_seq_generator(length,background_freq:list[float],num_seq=1):
@@ -149,4 +149,27 @@ def random_seq_generator3(seq_symbol:list[str],length,background_freq:dict,num_s
     background_freq_list = list(background_freq.values())  
     random_seq = ["".join(np.random.choice(seq_array,size=length,replace=True,p=background_freq_list))  for i in range(num_seq)]
     # 此处使用join()函数将每一个随机序列转换为字符串形式
+    return random_seq
+
+##############################################################################################################################################################################
+# 05
+def random_seq_generator4(seq_symbol:list[str],length,background_freq:dict,num_seq=1):
+    """
+    Fun:
+    最后生成的是字符串的列表，比如说：random_seq_generator3(["A","C","G","T"],10,{"A":0.25,"C":0.25,"G":0.25,"T":0.25},5)
+    生成的结果就是：列表的列表，每一个元素都是1个list对象，list对象中是1个可迭代的字符串对象（多个字符）
+    [['A', 'T', 'T', 'C', 'C', 'C', 'G', 'C', 'T', 'T'],
+    ['C', 'T', 'A', 'T', 'A', 'C', 'G', 'T', 'C', 'A'],
+    ['G', 'T', 'C', 'A', 'T', 'T', 'C', 'G', 'A', 'A'],
+    ['C', 'T', 'G', 'T', 'A', 'C', 'C', 'T', 'T', 'C'],
+    ['T', 'C', 'T', 'T', 'C', 'T', 'C', 'C', 'A', 'G']]
+    """
+    
+    import numpy as np 
+    np.random.seed(2025) 
+    
+    seq_array = np.asarray(seq_symbol)  
+    background_freq_list = list(background_freq.values())  
+    random_seq = [list("".join(np.random.choice(seq_array,size=length,replace=True,p=background_freq_list))) for i in range(num_seq)]
+    # 相比3中就是再套了个list，但是list()函数的作用是将字符串转换为列表对象，所以会把'ATTCCCGCTT'转换为['A','T','T','C','C','C','G','C','T','T']，也就是将字符串转换为列表对象
     return random_seq
