@@ -39,7 +39,7 @@ def bootstrap_X(n_bootstrap,sample:list[float],real_param_to_test,alpha=0.05):
 
 
 
-# ！！！比如说以自助法估计中位数统计量为例，构造相应百分位数的置信区间，用于判断抽取的某个样本中的中位数是否在置信区间内，以推断该样本是否来自于同一个抽样总体，即是否差异显著
+# ！！！比如说以自助法估计中位数统计量为例，构造相应百分位数的置信区间，用于判断抽取的某个样本中的中位数是否在置信区间内，以推断该样本是否来自于同一个抽样总体，即是否差异显著，见下面
 
 def boostrap_median(n_bootstrap,smaple:list[float],real_param_to_test,alpha=0.05):
     import numpy as np
