@@ -126,9 +126,9 @@ def parse_uniprot_fasta(path_to_fasta):
         
         proteins_dict = {} # 构造存储最终输出蛋白质id+序列的空字典
         for seq in protein_seqs:
-            id_start = seq.find("|")
-            id_end = seq.find("|",id_start+1)
-            key = seq[id_start:id_end+1]
+            id_start = seq.find("|")+1
+            id_end = seq.find("|",id_start)
+            key = seq[id_start:id_end]
             
             fasta_start = seq.find("\n")
             # https://www.runoob.com/python/att-string-find.html，beg=id_start+1即在该开始索引处开始往后找第1个|符号
