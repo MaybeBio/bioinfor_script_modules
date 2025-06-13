@@ -1,1 +1,6 @@
+# 在shell中，-k2按照第2列/field排序（可搭配awk制定field），-n按照数值而不是字符串unicode编码，-r降序反之为升序
+sort -k2 -nr xxx
+
+# 在python的pandas中
+xxx.sort_values(by="colyyy",ascending=False)
 
