@@ -1,6 +1,6 @@
 # 现在尝试将1个csv文件中指定的2列转换为fasta格式，定义1个函数
 # 默认输入的是csv文件，当然可以在pandas阅读中修改seq
-# 另外默认第一行是列名，所以skiprows=1，可以进一步修改用于自动识别skip与否
+# 另外默认第一行是列名，所以header=0，可以进一步修改用于自动识别skip与否（skiprows），以及取哪一列作为列名
 def convert_csv_to_fasta(csv_file,id_col,seq_col,output_file):
     """
     Arg:
@@ -19,7 +19,7 @@ def convert_csv_to_fasta(csv_file,id_col,seq_col,output_file):
     id_counter = {}
     
     # 首先读入数据，主要是列名需要去除，当然可以做得复杂点就是自动判断是否要skiprows
-    df = pd.read_csv(csv_file,skiprows=1)
+    df = pd.read_csv(csv_file,header=0)
 
     # 统计重复id
     # 首先是Counter函数会统计每一个id的频数，然后构建一个id:频数的字典
