@@ -42,7 +42,7 @@ def convert_csv_to_fasta(csv_file,id_col,seq_col,output_file):
             id_counter[protein_id] = 0
             unique_id = protein_id # 没有重复的，包括有重复但是第一个蛋白质的，都使用原名id
 
-            fasta_lines.append(f">{unique_id}\n{seq}\n")
+        fasta_lines.append(f">{unique_id}\n{seq}\n")
     # 将所有的fasta行写入到输出文件中
     with open(output_file,"w") as f:
         # writelines会原封不动地将列表中的每个字符串都写入文件
