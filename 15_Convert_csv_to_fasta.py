@@ -17,6 +17,9 @@ def convert_csv_to_fasta(csv_file,id_col,seq_col,output_file):
     fasta_lines = []
     # 另外对于重复id也需要进行处理
     id_counter = {}
+    
+    # 首先读入数据，主要是列名需要去除，当然可以做得复杂点就是自动判断是否要skiprows
+    df = pd.read_csv(csv_file,skiprows=1)
 
     # 统计重复id
     # 首先是Counter函数会统计每一个id的频数，然后构建一个id:频数的字典
@@ -24,8 +27,6 @@ def convert_csv_to_fasta(csv_file,id_col,seq_col,output_file):
     # 然后对于这个字典，如果这个字典中的值也就是频数＞1，也就是有重复的，然后这里就会具体记录下来这个重复的蛋白质id，方便后来检索
     duplicates = {k:v for k,v in id_counts.items() if v > 1}
 
-    # 主要是列名需要去除，当然可以做得复杂点就是自动判断是否要skiprows
-    df = pd.read_csv(csv_file,skiprows=1)
     for idx,row in df.iterrows():
         protein_id = row[id_col]
         seq = row[seq_col]
