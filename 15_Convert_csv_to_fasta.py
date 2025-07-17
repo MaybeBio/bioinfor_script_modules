@@ -12,6 +12,7 @@ def convert_csv_to_fasta(csv_file,id_col,seq_col,output_file):
         将指定的蛋白质ID和序列转换为fasta格式并保存到文件中，如果id_col有重名子，就按照顺序重命名为原来的id_1, id_2等
     """
     import pandas as pd
+    from collections import Counter
     # 用于承接后面的fasta
     fasta_lines = []
     # 另外对于重复id也需要进行处理
