@@ -19,6 +19,7 @@ def protein_sequence_to_charge_numeric(seq):
         'H': 1,   # 组氨酸
     }
     charge_numeric_seq = [ charge_mapping.get(aa,0) for aa in seq ]
+    return charge_numeric_seq
 
 # 2，
 def protein_sequence_to_charge_numeric(seq):
@@ -44,3 +45,4 @@ def protein_sequence_to_charge_numeric(seq):
             numeric_seq.append(charge_mapping[aa])
         else:
             numeric_seq.append(0)
+    return numeric_seq
