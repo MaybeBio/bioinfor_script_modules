@@ -1,6 +1,6 @@
 # 下面的程序都是完整的python api接口代码，并不是单纯的函数模块，当然，可以写成一个函数模块，但是暂且记录原始的全代码
 
-# 收集的代码在：01_get_idrs.py、01_get_idrs_v2.py
+# 收集的代码在：01_get_idrs.py、01_get_idrs_v2.py、01_get_idr_v3.py
 
 # 原始版本01_get_idrs.py命令行如下：
 python3 /data2/IDR_LLM/my_DL/01_get_idrs.py --help
@@ -31,4 +31,17 @@ options:
 # 更新中文版之后的代码在01_get_idrs_v3.py
 # v3版本除了输出每个蛋白质的IDR、non-IDR序列list之外，还输出IDR stitching序列文件的坐标，即起点与终点坐标
 # 另外还设置了一个用于过滤IDR长度的阈值参数，默认为30，也就长度＜30aa，不认为是本程序所要寻找的IDR
+
+# v3版本的代码01_get_idr_v3.py的命令行如下：
+python3 /data2/IDR_LLM/my_DL/01_get_idr_v3.py   --help
+usage: 01_get_idr_v3.py [-h] --i I --r R --o O [--t T]
+
+Run script to extract IDRs and non-IDRs from full protein sequences in a fasta file
+
+options:
+  -h, --help  show this help message and exit
+  --i I       Name of input fasta file containing full protein sequences
+  --r R       Name of output file contaning IDR results from iprscan
+  --o O       Name of output file contaning Uniprot IDs and IDR sequence lists, and non-IDR
+  --t T       Threshold for minimum length of IDR sequences, default is 30
 
