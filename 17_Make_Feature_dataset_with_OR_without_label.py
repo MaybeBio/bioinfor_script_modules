@@ -28,3 +28,4 @@ options:
   --l L       Name of input file contaning labels (optional), default is None
   --o O       Name of output file to export the data matrix into
 
+# 主要是这个模板可以再修改修改，用于更一般的蛋白质、DNA或者是序列数据获取、整理序列特征
