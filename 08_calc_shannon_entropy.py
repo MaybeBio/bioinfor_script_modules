@@ -97,7 +97,7 @@ def calc_shannon_entropy(seq:str) -> float:
     import numpy as np
     from collections import Counter
 
-    aa_freq_dict = dict(Counter(seq))
-    sample_entropy = -np.sum([ freq * np.log2(freq) for freq in aa_freq_dict.values() ])
+    aa_freq_list = [ count/len(seq)  for count in Counter(seq).values() ]  # 计算氨基酸频率
+    sample_entropy = -np.sum([ freq * np.log2(freq) for freq in aa_freq_list ])
     
     return sample_entropy
