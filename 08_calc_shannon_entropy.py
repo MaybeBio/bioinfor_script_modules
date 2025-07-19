@@ -60,4 +60,44 @@ def calc_shannon_entropy(seq:dict) -> float:
             sample_entropy -= p * math.log2(p)
     return sample_entropy
 
+##############################################################################################################################################################################
 
+# 04
+# 如果直接提供一段字符串序列，计算香农熵
+# 关键是获取序列字符串的氨基酸频率，可以参考借助一些第3方的库来获取氨基酸频率
+# 比如说借助localcider，主要是其中的模块 obj.get_amino_acid_fractions()
+def calc_shannon_entropy(seq:str) -> float:
+    """
+    Args:
+    seq:输入的氨基酸序列字符串
+    
+    Fun:
+    计算香农熵，衡量序列的复杂性和信息量
+    """
+    import numpy as np
+    from localcider.sequenceParameters import SequenceParameters
+
+    obj = SequenceParameters(seq)
+    sample_entropy = -np.sum([freq * np.log2(freq) if freq > 0 else 0 for freq in obj.get_amino_acid_fractions().values()])
+    return sample_entropy
+
+##############################################################################################################################################################################
+
+# 05
+# 也不一定要借助复杂的第三方库，可以直接使用基础的统计的第三方库
+# 比如说是collections里的频数统计函数Counter
+def calc_shannon_entropy(seq:str) -> float:
+    """
+    Args:
+    seq:输入的氨基酸序列字符串
+    
+    Fun:
+    计算香农熵，衡量序列的复杂性和信息量
+    """
+    import numpy as np
+    from collections import Counter
+
+    aa_freq_dict = dict(Counter(seq))
+    sample_entropy = -np.sum([ freq * np.log2(freq) for freq in aa_freq_dict.values() ])
+    
+    return sample_entropy
