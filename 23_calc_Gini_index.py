@@ -1,4 +1,5 @@
 # 计算Gini index：
+# 实际上是Simpson多样性指数（或Gini不纯度Gini Impurity），衡量氨基酸分布的均匀性
 
 def get_Gini_index(seq):
     """
