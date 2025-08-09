@@ -24,7 +24,9 @@ def create_project_structure(project_name):
             'features': None,
             'models': None,
             'evaluation': None,
-            'utils': None
+            'utils': {
+            '__init__.py': None
+            }
         },
         'scripts': None,
         'models': None,
