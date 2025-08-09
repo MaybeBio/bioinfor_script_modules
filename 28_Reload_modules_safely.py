@@ -76,6 +76,20 @@ def reload_module(module_path, module_name):
         return None
 
 
+===================================================================================================================================
+
+# 3，更简单的方法
+# notebook开头的sys.append一般是固定了的
+# 我只需要importlib.reload(被修改了源码的该模块)即可
+
+import importlib
+import utils.data_generation_and_treatment as dgen
+import utils.cluster_tools as ct
+
+# 修改完代码后，重新加载模块
+# ⚠️对，我只需要importlib.reload(被修改了源码的该模块)即可！
+importlib.reload(dgen)
+importlib.reload(ct)
 
 
 
