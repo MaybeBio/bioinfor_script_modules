@@ -35,6 +35,7 @@ def create_project_structure(project_name):
         'reports': {
             'figures': None,
             'results': None,
+            'logs': None,
             'final_report.md': None
         },
         'requirements.txt': None,
