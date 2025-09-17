@@ -8,6 +8,6 @@ def Cos_dist(seq1,seq2):
   norm_seq2 = np.linalg.norm(seq2)
   if norm_se1 == 0 or norm_seq2 == 0:
     return 1
-  cos_sim = np.dot(seq1,seq2)/(norm_a * norm_b)
+  cos_sim = np.dot(seq1,seq2)/(norm_seq1 * norm_seq2)
   cos_dist = 1 - cos_sim
   return cos_dist
