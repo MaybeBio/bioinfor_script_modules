@@ -95,3 +95,119 @@ def identify_charge_blocks(sequence,window_size=10,NCPR_threshold=5):
             "Acidic_blocks":Acidic_block_merged,
             "Basic_blocks":Basic_block_merged
         }    
+
+
+
+=====================================================================================================================
+
+def identify_charge_blocks(self,window_size=10,NCPR_threshold=5,tie_break="neutral",min_block_length=10):
+        
+        seq = self.sequence
+        L = len(seq)
+        if L == 0:
+            return {
+                "Acidic_blocks":[],
+                "Basic_blocks":[],
+                "Neutral_blocks":[]
+            }
+        
+        # 1，生成原始滑动窗口，并标注类型（保留score用于投票）
+        raw_windows = []
+        for i in range(L-window_size+1):
+            window_seq = seq[i:i+window_size]
+            net_charge = sum([self.aa_charge.get(aa,0) for aa in window_seq])
+            NCPR = net_charge / window_size
+            if abs(net_charge) >= NCPR_threshold:
+                window_type = "Basic" if net_charge > 0 else "Acidic"
+            else:
+                window_type = "Neutral"
+            raw_windows.append((i,i+window_size-1,window_size,window_seq,net_charge,NCPR,window_type))
+
+        # 退化情况：序列短于窗口，或没有窗口
+        if not raw_windows:
+            labels = [] 
+            for aa in seq:
+                charge_aa = self.aa_charge.get(aa,0)
+                labels.append("Basic" if charge_aa > 0 else ( "Acidic" if charge_aa < 0 else "Neutral"))
+        else:
+            # 2，per-residue voting：为每个被标为Basic/Acidic的窗口对覆盖残基投票
+            vote_basic = [0] * L 
+            vote_acidic = [0] * L
+            for start,end,window_size,window_seq,net_charge,NCPR,window_type in raw_windows:
+                if window_type == "Basic":
+                    for j in range(start,end+1):
+                        vote_basic[j] += 1
+                elif window_type == "Acidic":
+                    for j in range(start,end+1):
+                        vote_acidic[j] += 1
+
+            # 3，基于投票结构给每个残基打标签，如果是平票就标为中性
+            labels = ["Neutral"] * L
+            for i in range(L):
+                if vote_basic[i] > vote_acidic[i]:
+                    labels[i] = "Basic"
+                elif vote_basic[i] < vote_acidic[i]:
+                    labels[i] = "Acidic"
+                else:
+                    # ⚠️平票的话，如何判断残基电性归属，目前有两种策略
+                    # 1️⃣直接标为中性，
+                    # 2️⃣根据残基本身的电荷属性来判断，
+                    if tie_break == "neutral":
+                        labels[i] = "Neutral"
+                    elif tie_break == "residue":
+                        aa = seq[i]
+                        charge_aa = self.aa_charge.get(aa,0)
+                        labels[i] = "Basic" if charge_aa > 0 else ( "Acidic" if charge_aa < 0 else "Neutral")
+
+        # 4，合并连续的相同标签残基
+        Acidic_blocks = []
+        Basic_blocks = []
+        Neutral_blocks = []
+
+        current_label = labels[0]
+        start = 0
+        for i in range(1,L):
+            # 遇到标签变化，说明前一个电荷块结束
+            if labels[i] != current_label:
+                # 下面处理的都是前一个电荷块
+                block_seq = seq[start:i]
+                block_length = i - start
+                net_charge = sum([self.aa_charge.get(aa,0) for aa in block_seq])
+                NCPR = net_charge / block_length if block_length > 0 else 0
+
+                block = (start + 1, i, block_length, block_seq, net_charge, NCPR, current_label) 
+                if current_label == "Acidic":
+                    Acidic_blocks.append(block)
+                elif current_label == "Basic":
+                    Basic_blocks.append(block)
+                else:
+                    Neutral_blocks.append(block)
+                # 更新起点与当前标签
+                start = i
+                current_label = labels[i]
+        
+        # 更新到处理最后一个电荷块    
+        block_seq = seq[start:L]
+        block_length = L - start
+        net_charge = sum([self.aa_charge.get(aa,0) for aa in block_seq])
+        NCPR = net_charge / block_length if block_length > 0 else 0
+        block = (start + 1, L, block_length, block_seq, net_charge, NCPR, current_label)
+        if current_label == "Acidic":
+            Acidic_blocks.append(block)
+        elif current_label == "Basic":
+            Basic_blocks.append(block)
+        else:
+            Neutral_blocks.append(block)
+
+        # 5，过滤掉过短的电荷块
+        Acidic_blocks = [block for block in Acidic_blocks if block[2] >= min_block_length]
+        Basic_blocks = [block for block in Basic_blocks if block[2] >= min_block_length]
+        # 中性块不过滤
+
+        # 返回最终结果，以字典形式
+        return {
+            "Acidic_blocks":Acidic_blocks,
+            "Basic_blocks":Basic_blocks,
+            "Neutral_blocks":Neutral_blocks,
+            "charge_blocks": sorted(Acidic_blocks + Basic_blocks + Neutral_blocks, key=lambda x: x[0])  # 按起点升序排序
+        }
