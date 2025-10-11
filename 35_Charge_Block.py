@@ -211,3 +211,154 @@ def identify_charge_blocks(self,window_size=10,NCPR_threshold=5,tie_break="neutr
             "Neutral_blocks":Neutral_blocks,
             "charge_blocks": sorted(Acidic_blocks + Basic_blocks + Neutral_blocks, key=lambda x: x[0])  # 按起点升序排序
         }
+
+===========================================================================================================================
+
+def get_charge_blocks_residue(self,window: int,NCPR_threshold: float,tie_break: str,min_block_length: int,phos_sites: list):
+        
+        seq = self.sequence
+        L = len(seq)
+        if L == 0:
+            return {
+                "Acidic_blocks":[],
+                "Basic_blocks":[],
+                "Neutral_blocks":[]
+            }
+        
+        # 处理磷酸化位点，注意传入的是1-based index
+        if phos_sites is None:
+            phos_sites = []
+        # 转换为0-based
+        phos_sites = set([ p-1 for p in phos_sites ])
+        
+        # 1，生成原始滑动窗口，并标注类型（保留score用于投票）
+        raw_windows = []
+        for i in range(L-window_size+1):
+            window_seq = seq[i:i+window_size]
+            net_charge = 0
+            for j, aa in enumerate(window_seq):
+                # 当前残基的全局位置
+                pos = i + j
+                if pos in phos_sites:
+                    # 磷酸化位点电荷为-2
+                    net_charge += -2
+                else:
+                    net_charge += self.aa_charge.get(aa,0)
+            NCPR = net_charge / window_size
+            if abs(net_charge) >= NCPR_threshold:
+                window_type = "Basic" if net_charge > 0 else "Acidic"
+            else:
+                window_type = "Neutral"
+            raw_windows.append((i,i+window_size-1,window_size,window_seq,net_charge,NCPR,window_type))
+
+        # 退化情况：序列短于窗口，或没有窗口，也就是前面的raw_windows为空——> 用残基自身电荷作为标签，判断分为哪类电荷块
+        if not raw_windows:
+            labels = [] # 用于保存每个残基的电荷块分类标签
+            for j, aa in enumerate(seq):
+                # 当前残基的全局位置，这种情况下是i=0，也就是序列很短
+                pos = j
+                if pos in phos_sites:
+                    # 磷酸化位点电荷为-2
+                    charge_aa = -2
+                else:
+                    charge_aa = self.aa_charge.get(aa,0)
+                labels.append("Basic" if charge_aa > 0 else ( "Acidic" if charge_aa < 0 else "Neutral"))
+        else:
+            # 2，per-residue voting：为每个被标为Basic/Acidic的窗口对覆盖残基投票，也就是统计每个残基的电荷块覆盖净次数
+            # 这里我们忽略中性块的投票，因为正负电荷块优先于中性块，而且后续我们可以在labels中全部初始化为中性，还是不用额外考虑中性
+            vote_basic = [0] * L 
+            vote_acidic = [0] * L
+            for start,end,window_size,window_seq,net_charge,NCPR,window_type in raw_windows:
+                if window_type == "Basic":
+                    for j in range(start,end+1):
+                        vote_basic[j] += 1
+                elif window_type == "Acidic":
+                    for j in range(start,end+1):
+                        vote_acidic[j] += 1
+
+            # 3，基于投票结构给每个残基打标签，如果是平票就标为中性
+            labels = ["Neutral"] * L
+            for i in range(L):
+                if vote_basic[i] > vote_acidic[i]:
+                    labels[i] = "Basic"
+                elif vote_basic[i] < vote_acidic[i]:
+                    labels[i] = "Acidic"
+                else:
+                    # 平票的话，如何判断残基电性归属，目前有两种策略
+                    # 1️, 直接标为中性，减少电荷块识别的假阳性，而且我们的目标是识别大范围的连续电荷块，孤立的带电残基可能不重要，我们更关注连续的块（因为如果有很多个残基打成平手，容易出现+-+这种孤立不连续电荷情况）
+                    # 2️，根据残基本身的电荷属性来判断，可能符合生物学意义和直觉，减少中性假阳性，后续可以再进行修改
+                    if tie_break == "neutral":
+                        labels[i] = "Neutral"
+                    elif tie_break == "residue":
+                        aa = seq[i]
+                        charge_aa = self.aa_charge.get(aa,0)
+                        labels[i] = "Basic" if charge_aa > 0 else ( "Acidic" if charge_aa < 0 else "Neutral")
+                    
+                        # ⚠️这里需要添加一个判断情况，如果该中性位点是磷酸化位点，即使是中性也要标注为酸性⚠️
+                        if i in phos_sites:
+                                labels[i] = "Acidic"
+
+        # 4，合并连续的相同标签残基，形成最终电荷块
+        Acidic_blocks = []
+        Basic_blocks = []
+        Neutral_blocks = []
+
+        current_label = labels[0]
+        start = 0
+        for i in range(1,L):
+            # 遇到标签变化，说明前一个电荷块结束
+            if labels[i] != current_label:
+                # 下面处理的都是前一个电荷块
+                block_seq = seq[start:i]
+                block_length = i - start
+                net_charge = 0
+                for j, aa in enumerate(block_seq):
+                    # 当前残基的全局位置
+                    pos = start + j  
+                    if pos in phos_sites:
+                        # 磷酸化位点电荷为 -2
+                        net_charge += -2  
+                    else:
+                        net_charge += self.aa_charge.get(aa, 0)
+                NCPR = net_charge / block_length if block_length > 0 else 0
+
+                # 保留窗口起点、终点、窗口大小、窗口内序列、窗口内序列净电荷值、NCPR值、窗口类型
+                # 此处起点、终点转换为为1-based index
+                block = (start + 1, i, block_length, block_seq, net_charge, NCPR, current_label) 
+                if current_label == "Acidic":
+                    Acidic_blocks.append(block)
+                elif current_label == "Basic":
+                    Basic_blocks.append(block)
+                else:
+                    Neutral_blocks.append(block)
+                # 更新起点与当前标签
+                start = i
+                current_label = labels[i]
+        
+        # 更新到处理最后一个电荷块    
+        block_seq = seq[start:L]
+        block_length = L - start
+        net_charge = sum([self.aa_charge.get(aa,0) for aa in block_seq])
+        NCPR = net_charge / block_length if block_length > 0 else 0
+        block = (start + 1, L, block_length, block_seq, net_charge, NCPR, current_label)
+        if current_label == "Acidic":
+            Acidic_blocks.append(block)
+        elif current_label == "Basic":
+            Basic_blocks.append(block)
+        else:
+            Neutral_blocks.append(block)
+
+        # 5，过滤掉过短的电荷块
+        Acidic_blocks = [block for block in Acidic_blocks if block[2] >= min_block_length]
+        Basic_blocks = [block for block in Basic_blocks if block[2] >= min_block_length]
+        # 中性块不过滤
+
+        # 最终结果
+        blocks = {
+            "Acidic_blocks":Acidic_blocks,
+            "Basic_blocks":Basic_blocks,
+            "Neutral_blocks":Neutral_blocks,
+            "Charge_blocks": sorted(Acidic_blocks + Basic_blocks + Neutral_blocks, key=lambda x: x[0])  # 按起点升序排序
+        }
+        # 返回最终结果，以字典形式
+        return blocks
