@@ -291,12 +291,9 @@ def get_charge_blocks_residue(self,window: int,NCPR_threshold: float,tie_break: 
                         labels[i] = "Neutral"
                     elif tie_break == "residue":
                         aa = seq[i]
-                        charge_aa = self.aa_charge.get(aa,0)
+                        # 这里需要添加一个判断情况, 如果该中性位点是磷酸化位点, 即使是中性也要标注为酸性
+                        charge_aa = -2 if aa in phos_zero else self.aa_charge.get(aa, 0)
                         labels[i] = "Basic" if charge_aa > 0 else ( "Acidic" if charge_aa < 0 else "Neutral")
-                    
-                        # ⚠️这里需要添加一个判断情况，如果该中性位点是磷酸化位点，即使是中性也要标注为酸性⚠️
-                        if i in phos_sites:
-                                labels[i] = "Acidic"
 
         # 4，合并连续的相同标签残基，形成最终电荷块
         Acidic_blocks = []
