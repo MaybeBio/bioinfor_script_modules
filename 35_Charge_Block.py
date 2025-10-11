@@ -359,7 +359,11 @@ def get_charge_blocks_residue(self,window: int,NCPR_threshold: float,tie_break: 
         Neutral_blocks = [block for block in Neutral_blocks] +
                                 [block for block in Acidic_blocks if block[2] < min_block_length] +
                                 [block for block in Basic_blocks if block[2] < min_block_length]
-
+        # 还要注意类型名也要改回来
+        for block in Neutral_blocks:
+                block[6] = "Neutral"
+                
+        # ⚠️另外这里中性块有新的块之后，需要将相邻的中性块合并起来，当然不合并也不影响，因为重点是±块
 
         # 最终结果
         blocks = {
