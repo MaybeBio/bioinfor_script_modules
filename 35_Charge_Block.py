@@ -335,7 +335,14 @@ def get_charge_blocks_residue(self,window: int,NCPR_threshold: float,tie_break: 
         # 更新到处理最后一个电荷块    
         block_seq = seq[start:L]
         block_length = L - start
-        net_charge = sum([self.aa_charge.get(aa,0) for aa in block_seq])
+        net_charge = 0
+        for j, aa in enumerate(block_seq):
+                pos = start + j
+                if pos in phos_sites:
+                        net_charge += -2
+                else:
+                        net_charge += self.aa_charge.get(aa,0)
+                        
         NCPR = net_charge / block_length if block_length > 0 else 0
         block = (start + 1, L, block_length, block_seq, net_charge, NCPR, current_label)
         if current_label == "Acidic":
@@ -348,7 +355,11 @@ def get_charge_blocks_residue(self,window: int,NCPR_threshold: float,tie_break: 
         # 5，过滤掉过短的电荷块
         Acidic_blocks = [block for block in Acidic_blocks if block[2] >= min_block_length]
         Basic_blocks = [block for block in Basic_blocks if block[2] >= min_block_length]
-        # 中性块不过滤
+        # 中性块不过滤, 但是注意如果酸碱电荷块过滤之后, 中性电荷块除了原始数据,还需要补充被过滤掉的酸碱电荷块
+        Neutral_blocks = [block for block in Neutral_blocks] +
+                                [block for block in Acidic_blocks if block[2] < min_block_length] +
+                                [block for block in Basic_blocks if block[2] < min_block_length]
+
 
         # 最终结果
         blocks = {
