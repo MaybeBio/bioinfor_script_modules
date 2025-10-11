@@ -32,3 +32,5 @@
             "reduced_pattern": charge_pattern_reduced
         }
         return charge_pattern
+
+
