@@ -106,46 +106,60 @@ get_Uniprot_protein_fasta(query=query, params_dict=params_dict, output_file="c2h
 # 2, 使用stream接口
 
 import requests, time
-def get_Uniprot_protein_fasta(query: str, params_dict: dict, output_file: str) -> list[str]:
+def get_Uniprot_protein_fasta(query: str, params_dict: dict, output_file: Optional[str]) -> dict[str, str]:
     """
-    Description:
+    Description
+    ----------
         根据给定的查询参数, 从Uniprot数据库中获取蛋白质的fasta序列, 支持分页请求;
         
-    Args:
+    Args
+    ----------
         query (str): 查询字符串, 用于指定搜索条件, 可以是单个序列数据，也可以是批量查询;
         params_dict (dict): 其他请求参数的字典, 一般包括以下键值对:
-            format (str): 返回数据的格式, 默认为"fasta";
-            compressed (bool): 是否请求压缩格式的数据, 默认为False;
-            size (int): 每页返回的记录数/单次请求返回的序列数, 默认为500
-        output_file (str): 输出文件路径, 用于保存获取到的fasta序列;
+    - format (str): 返回数据的格式, 默认为 "fasta";
+    - compressed (bool): 是否请求压缩格式的数据, 默认为 False;
+    - size (int): 每页返回的记录数/单次请求返回的序列数, 默认为 500;
+        output_file (str): 输出文件路径, 用于保存获取到的fasta序列, 如果为None则不保存文件, 建议查询大量序列时提供该参数, 如果只查询单个序列可以不提供;
 
-    Returns:
-        list[str]: 包含所有获取到的fasta序列的列表
+    Returns
+    ----------
+        Dict[str, str]: 包含所有获取到的fasta序列的字典, 键为蛋白质ID, 值为对应的fasta序列字符串;
     
-    Notes:
-        1, params_dict中的键值对会被添加到请求参数中, query参数会单独传递, 虽然参数单独传递, 但是最后都合并到URL中进行请求。
-        2, query参数参考https://www.uniprot.org/help/query-fields, params_dict参数则比较固定, 参考Args部分说明;
-        3, query参数一般建议带上物种, organism_id:9606; 以及是否reviewed:true等过滤条件
+    Notes
+    ----------
+    - 1, params_dict中的键值对会被添加到请求参数中, query参数会单独传递, 虽然参数单独传递, 但是最后都合并到URL中进行请求。
+    - 2, query参数参考https://www.uniprot.org/help/query-fields, params_dict参数则比较固定, 参考Args部分说明;
+    - 3, query参数一般建议带上物种, organism_id:9606; 以及是否reviewed:true等过滤条件
+    - 4, 该法取2, 使用stream端点进行请求, 避免分页复杂性, 详情参考https://github.com/MaybeBio/bioinfor_script_modules/blob/main/40_get_UniProt_protein_fasta.py中法12
+    
+    Example
+    ----------
+    >>> query = "(organism_id:9606) AND (reviewed:true) AND ((xref:prosite-PS00028) OR (xref:prosite-PS50157))"
+    >>> params_dict = {
+    ...        "format": "fasta",
+    ...        "compressed": False
+    ...        }
+    >>> c2h2_zfp = get_Uniprot_protein_fasta(query=query, 
+    ...                params_dict=params_dict, 
+    ...                output_file="/data2/IDR_Pattern/data/raw/c2h2_zf_PROSITE.fasta")
+    
     """
 
     base = "https://rest.uniprot.org/uniprotkb/stream"
     # 将查询参数添加到params_dict中
     params_dict["query"] = query
-    # 初始化请求url为基础url, 同时准备一个列表用于存储获取到的fasta序列片段
-    pages, url = [], base
     
     # 使用流式端点进行请求
-    r = requests.get(url, params=params_dict, stream=True, timeout=60)
+    r = requests.get(base, params=params_dict, stream=True, timeout=60)
     r.raise_for_status()
-
-    if not r.text.strip():
-        return []
 
     # 存储单个条目、每一行line的缓冲区
     records, buffer = [], []
 
     # 对于stream, 建议使用iter_lines方法逐行读取内容, 不使用splitlines方法
     for line in r.iter_lines(decode_unicode=True):
+        if line is None:
+            continue
         if line.startswith(">"):
             # 说明新开了一个序列
             # 如果前面已经有序列了, 则合并并保存前面的序列(buffer，保存时补上换行符,其实就是将lines重新转回str)
@@ -167,18 +181,12 @@ def get_Uniprot_protein_fasta(query: str, params_dict: dict, output_file: str) -
         protein_seq =  "".join(line.strip() for line in each_fasta.splitlines()[1:])
         fasta_dict[protein_id] = protein_seq
         
-    # 将结果保存到一个指定的输出文件中
-    with open(output_file,"w") as file:
-        file.write(r.text)
+    # 将结果保存到一个指定的输出文件中(可选)
+    if output_file:
+        with open(output_file,"w") as file:
+            # 最好不用r.text, 与流式请求不一致
+            file.write("\n".join(records) + "\n")
     return fasta_dict
-
-# 示例, example, 可依据自己的需求构建更加复杂的url
-query = "(organism_id:9606) AND (reviewed:true) AND ((xref:prosite-PS00028) OR (xref:prosite-PS50157))"
-params_dict = {
-    "format": "fasta",
-    "compressed": False
-}
-
 get_Uniprot_protein_fasta(query=query, params_dict=params_dict, output_file="uniprot_human_zinc_finger.fasta")
 
 
