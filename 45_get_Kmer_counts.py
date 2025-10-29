@@ -87,11 +87,10 @@ def get_kmer_counts(string:str, ks:Optional[Iterable[int]] = None) -> Dict[int, 
     # 先处理异常情况
     if not string:
         raise ValueError("Input string cannot be empty.")
-    
-    # 先初始化结果存储字典
-    kmer_dict: Dict[int, Dict[str, int]] = {k: Counter() for k in ks}
 
     if ks is not None:
+        # 先初始化结果存储字典
+        kmer_dict: Dict[int, Dict[str, int]] = {k: Counter() for k in ks}
         for k in ks:
             if k > len(string):
                 # 如果k值＞字符串长度, 则对应的k-mer计数字典为空
@@ -104,6 +103,8 @@ def get_kmer_counts(string:str, ks:Optional[Iterable[int]] = None) -> Dict[int, 
                     kmer_dict[k][kmer] += 1
     else:
         # 如果没有提供ks参数, 则计算1-len(string)范围内的所有k值
+        # 先初始化结果存储字典
+        kmer_dict: Dict[int, Dict[str, int]] = {k: Counter() for k in range(1, len(string) + 1)}
         for k in range(1, len(string) + 1):
             for i in range(len(string) - k + 1):
                 kmer = string[i:i+k]
