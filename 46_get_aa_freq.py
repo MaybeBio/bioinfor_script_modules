@@ -20,5 +20,9 @@ def get_aa_freq(sequence: str) -> Dict[str, float]:
     """
     aa_count = Counter(sequence)
     seq_length = len(sequence)
-    aa_freq = { aa: aa_count.get(aa,0) / seq_length for aa in aa_alphabets }
+    if seq_length > 0:
+        aa_freq = { aa: aa_count.get(aa,0) / seq_length for aa in aa_alphabets }
+    else:
+        aa_freq = {}
     return aa_freq
+
