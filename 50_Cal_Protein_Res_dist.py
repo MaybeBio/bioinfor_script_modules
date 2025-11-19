@@ -32,3 +32,14 @@ def _pairwise_dist_loop(coords):
 def _pairwise_dist(coords):
     diff = coords[:, None, :] - coords[None, :, :]
     return np.sqrt(np.sum(diff * diff, axis=-1))
+
+# 运算示例, 比如说对于CTCF 727
+import numpy as np
+coords = np.zeros((727,3))
+for i in range(727):
+    coords[i] = chain[i+1]['CA'].coord
+coords,coords.shape
+
+# 调用
+_pairwise_dist_loop(coords)
+_pairwise_dist(coords)
