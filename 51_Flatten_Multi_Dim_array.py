@@ -1,4 +1,6 @@
 # 将多维数组展平: ravel和flatten
+# 首先声明两者所要实现的功能是一致的（将多维数组降位一维），两者的区别在于返回拷贝（copy）还是返回视图（view），numpy.flatten()返回一份拷贝，对拷贝所做的修改不会影响（reflects）原始矩阵，而numpy.ravel()返回的是视图（view，也颇有几分C/C++引用reference的意味），会影响（reflects）原始矩阵。
+# 参考：https://blog.csdn.net/lanchunhui/article/details/50354978
 
 import numpy as np
 
