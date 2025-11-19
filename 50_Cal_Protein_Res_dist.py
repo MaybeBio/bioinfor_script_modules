@@ -29,6 +29,8 @@ def _pairwise_dist_loop(coords):
 # 2, broadcasting 
 # 使用广播机制，使运算更加方便快捷
 # 处理速度优于法1
+# https://www.doubao.com/chat/29935750560155906
+
 def _pairwise_dist(coords):
     diff = coords[:, None, :] - coords[None, :, :]
     return np.sqrt(np.sum(diff * diff, axis=-1))
