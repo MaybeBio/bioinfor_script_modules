@@ -19,8 +19,14 @@ idx = np.where(mask)[0]  # -> [0,2,5]
 pae_sub = pae[np.ix_(idx, idx)]
 
 
-
 # 示例 3：带重复索引（会重复行/列）
 idx = [1, 1, 3]
 pae_sub = pae[np.ix_(idx, idx)]
 # 子矩阵会包含第1行/列两次
+
+array = np.arange(36).reshape(6,6)
+array
+
+idx = [1,2,3]
+array[np.ix_(idx,idx)],array,array[idx][:,idx]
+
