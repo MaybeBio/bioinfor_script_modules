@@ -1,6 +1,6 @@
 # 为alphafold3输出结果, 在pymol中依据plddt分数对结构上色可视化
 # 参考修改自: https://github.com/cbalbin-bio/pymol-color-alphafold
-# 
+# https://github.com/ailienamaggiolo/alphafold_coloring
 
 # 1,
 from pymol import cmd
