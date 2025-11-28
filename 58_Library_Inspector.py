@@ -783,3 +783,354 @@ def inspect_library(
             print(f"❌ Error writing file: {e}")
     else:
         print(content)
+
+
+
+==============================================================================================================================================
+
+# 4, 类继承的需求新增
+
+import inspect
+import importlib
+import sys
+import os
+import pkgutil
+from collections import Counter, defaultdict
+from typing import Any, List, Dict, Optional, Tuple
+
+# 尝试导入 networkx 进行高级网络分析
+try:
+    import networkx as nx
+    HAS_NETWORKX = True
+except ImportError:
+    HAS_NETWORKX = False
+
+def inspect_library(
+    library_name: str,
+    output_path: Optional[str] = None,
+    include_private: bool = False,
+    include_imported: bool = False
+):
+    """
+    Dynamically inspect a Python library, analyze dependencies using Network Analysis, and generate a report.
+    """
+    
+    # --- 1. 动态导入主库 (带 sys.argv 保护) ---
+    _old_argv = sys.argv
+    sys.argv = [sys.argv[0]]
+
+    submodules = []
+    main_module = None
+
+    try:
+        try:
+            main_module = importlib.import_module(library_name)
+            submodules.append(main_module)
+        except ImportError as e:
+            print(f"❌ Error: Could not import library '{library_name}'. Reason: {e}")
+            return
+        except Exception as e:
+            print(f"❌ Error: An unexpected error occurred while importing '{library_name}': {e}")
+            return
+
+        print(f"🔍 Analyzing dependencies for '{library_name}' (Network Analysis Phase)...")
+        
+        if hasattr(main_module, "__path__"):
+            for importer, modname, ispkg in pkgutil.walk_packages(main_module.__path__, main_module.__name__ + "."):
+                try:
+                    sub_mod = importlib.import_module(modname)
+                    submodules.append(sub_mod)
+                except Exception:
+                    continue
+    finally:
+        sys.argv = _old_argv
+
+    lines = []
+    lines.append(f"# Documentation for `{library_name}`")
+    lines.append(f"**File Path:** `{getattr(main_module, '__file__', 'Built-in/Unknown')}`\n")
+    
+    doc = inspect.getdoc(main_module)
+    if doc:
+        lines.append("## Module Docstring")
+        lines.append(f"```text\n{doc}\n```\n")
+
+    # ==========================================
+    # Phase 1: Network Construction & Analysis
+    # ==========================================
+    
+    G = nx.DiGraph() if HAS_NETWORKX else None
+    
+    internal_modules_rank = Counter() 
+    external_libs_rank = Counter()    
+    dependency_graph = defaultdict(set) 
+
+    for mod in submodules:
+        current_mod_name = mod.__name__
+        if HAS_NETWORKX:
+            G.add_node(current_mod_name, type='internal')
+        
+        for name, obj in inspect.getmembers(mod):
+            obj_module = getattr(obj, "__module__", None)
+            
+            if not obj_module: continue
+            if obj_module == current_mod_name: continue
+
+            dependency_graph[current_mod_name].add(obj_module)
+
+            if obj_module.startswith(library_name):
+                internal_modules_rank[obj_module] += 1
+                if HAS_NETWORKX:
+                    G.add_edge(current_mod_name, obj_module)
+            else:
+                top_level_pkg = obj_module.split('.')[0]
+                if top_level_pkg not in ['builtins', 'sys', 'os', 'typing']:
+                    external_libs_rank[top_level_pkg] += 1
+                    if HAS_NETWORKX:
+                        G.add_node(top_level_pkg, type='external')
+                        G.add_edge(current_mod_name, top_level_pkg)
+
+    lines.append("## 📊 Network & Architecture Analysis")
+    
+    if not HAS_NETWORKX:
+        lines.append("> ⚠️ `networkx` is not installed. Advanced metrics are disabled.\n")
+
+    # --- 1. 外部依赖 ---
+    lines.append("### 🌍 Top External Dependencies")
+    if external_libs_rank:
+        lines.append("| Library | Usage Count |")
+        lines.append("| :--- | :--- |")
+        for lib, count in external_libs_rank.most_common(10):
+            lines.append(f"| **{lib}** | {count} |")
+    else:
+        lines.append("_No significant external dependencies._")
+    lines.append("\n")
+
+    # --- 2. 网络指标分析 ---
+    if HAS_NETWORKX and len(G.nodes) > 0:
+        lines.append("### 🕸️ Network Metrics (Advanced)")
+        
+        # PageRank
+        try:
+            pagerank = nx.pagerank(G, alpha=0.85)
+            sorted_pr = sorted(pagerank.items(), key=lambda x: x[1], reverse=True)
+            
+            lines.append("#### 👑 Top Modules by PageRank (Authority)")
+            lines.append("| Rank | Module | Score | Type |")
+            lines.append("| :--- | :--- | :--- | :--- |")
+            
+            for i, (node, score) in enumerate(sorted_pr[:10]):
+                node_type = "Internal" if node.startswith(library_name) else "External"
+                short_name = node.replace(library_name + ".", "")
+                lines.append(f"| {i+1} | `{short_name}` | {score:.4f} | {node_type} |")
+            lines.append("\n")
+        except Exception:
+            pass
+
+        # Betweenness
+        try:
+            internal_nodes = [n for n, d in G.nodes(data=True) if d.get('type') == 'internal']
+            if len(internal_nodes) > 2: # 只有节点够多时才计算介数
+                sub_G = G.subgraph(internal_nodes)
+                betweenness = nx.betweenness_centrality(sub_G)
+                sorted_bt = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)
+
+                lines.append("#### 🌉 Top Bridges (Betweenness Centrality)")
+                lines.append("| Rank | Module | Score |")
+                lines.append("| :--- | :--- | :--- |")
+                
+                count = 0
+                for node, score in sorted_bt:
+                    if score == 0: continue
+                    if count >= 8: break
+                    short_name = node.replace(library_name + ".", "")
+                    lines.append(f"| {count+1} | `{short_name}` | {score:.4f} |")
+                    count += 1
+                if count == 0:
+                    lines.append("_No significant bridge nodes detected (flat structure)._\n")
+            else:
+                lines.append("_Structure is too simple (single module) for Betweenness Centrality analysis._\n")
+
+        except Exception:
+            pass
+
+    # --- 3. 可视化 (Mermaid) ---
+    lines.append("### 🗺️ Dependency & Architecture Map")
+    
+    mermaid_lines = ["graph TD"]
+    mermaid_lines.append("    classDef core fill:#f96,stroke:#333,stroke-width:2px;")
+    mermaid_lines.append("    classDef external fill:#9cf,stroke:#333,stroke-width:1px;")
+    mermaid_lines.append("    classDef normal fill:#fff,stroke:#333,stroke-width:1px;")
+
+    # 判断是否为简单结构（单文件）
+    is_simple_structure = len(submodules) < 2
+
+    if is_simple_structure:
+        lines.append("> ℹ️ **Structure Note:** This library appears to be a single module. The graph below visualizes **Class Inheritance** to show internal architecture.\n")
+    
+    # 筛选节点
+    if HAS_NETWORKX:
+        top_nodes = set(n for n, s in sorted_pr[:20])
+    else:
+        top_nodes = set(x[0] for x in internal_modules_rank.most_common(20))
+
+    edges_to_draw = set()
+    
+    # A. 绘制模块依赖 (原逻辑)
+    source_data = G.edges() if HAS_NETWORKX else []
+    if not HAS_NETWORKX:
+        for src, targets in dependency_graph.items():
+            for tgt in targets:
+                source_data.append((src, tgt))
+
+    for u, v in source_data:
+        if u in top_nodes or v in top_nodes:
+            short_u = u.replace(library_name + ".", "").split('.')[-1]
+            short_v = v.replace(library_name + ".", "").split('.')[-1]
+            if not v.startswith(library_name): short_v = v.split('.')[0]
+            
+            if short_u == short_v: continue
+            edge_id = f"{short_u}->{short_v}"
+            if edge_id in edges_to_draw: continue
+            edges_to_draw.add(edge_id)
+
+            arrow = "-.->" if not v.startswith(library_name) else "-->"
+            mermaid_lines.append(f"    {short_u}{arrow}{short_v}")
+            
+            # 样式
+            if u.startswith(library_name): mermaid_lines.append(f"    class {short_u} core;")
+            else: mermaid_lines.append(f"    class {short_u} external;")
+            
+            if v.startswith(library_name): mermaid_lines.append(f"    class {short_v} core;")
+            else: mermaid_lines.append(f"    class {short_v} external;")
+
+    # B. (新增) 绘制类继承关系 (针对单文件模块增强)
+    if is_simple_structure:
+        for mod in submodules:
+            for name, obj in inspect.getmembers(mod, inspect.isclass):
+                # 只分析定义在当前库中的类
+                if getattr(obj, "__module__", "").startswith(library_name):
+                    for base in obj.__bases__:
+                        base_name = base.__name__
+                        if base_name == 'object': continue
+                        
+                        # 绘制继承箭头: Class --|> Base
+                        mermaid_lines.append(f"    {name} --|> {base_name}")
+                        mermaid_lines.append(f"    class {name} core;")
+                        
+                        # 如果基类是外部的（比如 torch.nn.Module），标记为 external
+                        if base.__module__.split('.')[0] != library_name:
+                            mermaid_lines.append(f"    class {base_name} external;")
+                        else:
+                            mermaid_lines.append(f"    class {base_name} core;")
+
+    lines.append("<details><summary>Show Mermaid Graph</summary>\n")
+    lines.append("```mermaid")
+    lines.append("\n".join(mermaid_lines))
+    lines.append("```\n</details>\n")
+
+    # ==========================================
+    # Phase 2: Surface Level Inspection
+    # ==========================================
+    lines.append("## 📑 Top-Level API Contents")
+
+    if hasattr(main_module, "__all__"):
+        all_names = main_module.__all__
+        using_all = True
+    else:
+        all_names = dir(main_module)
+        using_all = False
+    
+    members_data = []
+
+    for name in all_names:
+        if not include_private and not using_all and name.startswith("_"):
+            continue
+        
+        try:
+            obj = getattr(main_module, name)
+        except AttributeError:
+            continue
+
+        obj_module = getattr(obj, "__module__", None)
+        is_imported = False
+        if obj_module and not obj_module.startswith(library_name):
+            is_imported = True
+        
+        if not include_imported and is_imported:
+             if not using_all:
+                 continue
+
+        members_data.append((name, obj, is_imported))
+
+    classes = []
+    functions = []
+    
+    for name, obj, is_imported in members_data:
+        display_name = name + (" (imported)" if is_imported else "")
+        
+        if inspect.isclass(obj):
+            classes.append((display_name, obj))
+        elif inspect.isfunction(obj) or inspect.isbuiltin(obj):
+            functions.append((display_name, obj))
+
+    def get_info(obj):
+        try:
+            sig = str(inspect.signature(obj))
+        except (ValueError, TypeError):
+            sig = getattr(obj, "__text_signature__", "(...)")
+            if sig is None: sig = "(...)"
+        
+        doc = inspect.getdoc(obj) or "No documentation available."
+        return sig, doc
+
+    if functions:
+        lines.append("### 🔧 Functions")
+        for name, func in functions:
+            sig, doc = get_info(func)
+            lines.append(f"#### `{name}{sig}`")
+            lines.append(f"> {doc.splitlines()[0] if doc else ''}")
+            lines.append(f"<details><summary>Full Docstring</summary>\n\n```text\n{doc}\n```\n</details>\n")
+
+    if classes:
+        lines.append("### 📦 Classes")
+        for name, cls in classes:
+            sig, doc = get_info(cls)
+            lines.append(f"#### `class {name}{sig}`")
+            lines.append(f"{doc.splitlines()[0] if doc else ''}\n")
+            
+            methods = inspect.getmembers(cls, predicate=lambda x: inspect.isfunction(x) or inspect.ismethod(x))
+            if methods:
+                lines.append("| Method | Signature | Description |")
+                lines.append("| :--- | :--- | :--- |")
+                for m_name, m_obj in methods:
+                    if not include_private and m_name.startswith("_") and m_name != "__init__":
+                        continue
+                    m_sig, m_doc = get_info(m_obj)
+                    short_doc = m_doc.splitlines()[0] if m_doc else "-"
+                    short_doc = short_doc.replace("|", "\\|")
+                    lines.append(f"| **{m_name}** | `{m_sig}` | {short_doc} |")
+            lines.append("\n")
+
+    # --- Output ---
+    content = "\n".join(lines)
+    
+    if output_path:
+        if not output_path.endswith(".md"):
+            output_path += ".md"
+        
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir)
+            except OSError as e:
+                print(f"❌ Error creating directory {output_dir}: {e}")
+                return
+
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"✅ Documentation saved to: {os.path.abspath(output_path)}")
+        except IOError as e:
+            print(f"❌ Error writing file: {e}")
+    else:
+        print(content)
