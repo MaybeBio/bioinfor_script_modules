@@ -1134,3 +1134,452 @@ def inspect_library(
             print(f"❌ Error writing file: {e}")
     else:
         print(content)
+
+
+
+===================================================================================================================================================
+
+# 5, 类继承, 变量处理逻辑
+
+import inspect
+import importlib
+import sys
+import os
+import pkgutil
+import ast  # 新增：用于静态代码分析
+from collections import Counter, defaultdict
+from typing import Any, List, Dict, Optional, Tuple, Set
+
+# 尝试导入 networkx 进行高级网络分析
+try:
+    import networkx as nx
+    HAS_NETWORKX = True
+except ImportError:
+    HAS_NETWORKX = False
+
+# --- Helper: AST 分析器，用于提取函数内部逻辑 ---
+class FunctionFlowVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.calls = []      # 调用的函数
+        self.assignments = [] # 变量赋值
+        self.returns = []    # 返回值
+
+    def visit_Call(self, node):
+        # 提取函数调用，例如 self.model(x) 或 np.array(x)
+        func_name = ""
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            func_name = getattr(node.func.value, 'id', 'obj') + "." + node.func.attr
+        
+        if func_name:
+            # 尝试获取参数名，用于展示数据流
+            args = []
+            for arg in node.args:
+                if isinstance(arg, ast.Name):
+                    args.append(arg.id)
+            self.calls.append((func_name, args))
+        self.generic_visit(node)
+
+    def visit_Assign(self, node):
+        # 提取赋值，例如 y = f(x)
+        targets = []
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                targets.append(target.id)
+        
+        # 如果赋值的右边是一个函数调用
+        if isinstance(node.value, ast.Call):
+            self.visit(node.value) # 让 visit_Call 处理右边
+            # 关联最后一次调用到这个变量 (简化处理)
+            if self.calls:
+                last_call, args = self.calls[-1]
+                self.assignments.append((targets, last_call))
+        self.generic_visit(node)
+
+    def visit_Return(self, node):
+        if isinstance(node.value, ast.Name):
+            self.returns.append(node.value.id)
+        elif isinstance(node.value, ast.Tuple):
+            self.returns.append("Tuple(...)")
+        else:
+            self.returns.append("Expression")
+        self.generic_visit(node)
+
+def generate_function_flowchart(func_obj) -> str:
+    """
+    使用 AST 分析函数源码，生成 Mermaid 流程图代码
+    """
+    try:
+        source = inspect.getsource(func_obj)
+        # 去除缩进，否则 ast.parse 会报错
+        source = inspect.cleandoc(source)
+        tree = ast.parse(source)
+    except (OSError, TypeError, IndentationError, SyntaxError):
+        return ""
+
+    visitor = FunctionFlowVisitor()
+    visitor.visit(tree)
+
+    # 如果函数太简单（没有调用也没有赋值），就不画图了
+    if not visitor.calls and not visitor.assignments:
+        return ""
+
+    # 构建 Mermaid
+    lines = ["flowchart LR"]
+    
+    # 1. 输入参数
+    sig = inspect.signature(func_obj)
+    params = list(sig.parameters.keys())
+    if params:
+        lines.append(f"    Input[Input: {', '.join(params)}]:::input")
+    
+    # 2. 逻辑流
+    # 简化策略：按顺序连接调用
+    prev_node = "Input" if params else None
+    
+    step_idx = 0
+    for func_name, args in visitor.calls:
+        step_id = f"Step{step_idx}"
+        arg_str = f"({', '.join(args)})" if args else ""
+        
+        # 检查这个调用是否被赋值给了变量
+        assigned_var = None
+        for targets, call_name in visitor.assignments:
+            if call_name == func_name:
+                assigned_var = ", ".join(targets)
+                break
+        
+        label = f"{func_name}{arg_str}"
+        if assigned_var:
+            label += f"<br/>⬇<br/>{assigned_var}"
+            
+        lines.append(f"    {step_id}({label}):::process")
+        
+        if prev_node:
+            lines.append(f"    {prev_node} --> {step_id}")
+        prev_node = step_id
+        step_idx += 1
+
+    # 3. 返回值
+    if visitor.returns:
+        ret_label = ", ".join(visitor.returns)
+        lines.append(f"    Return([Return: {ret_label}]):::output")
+        if prev_node:
+            lines.append(f"    {prev_node} --> Return")
+
+    # 样式定义
+    lines.append("    classDef input fill:#e1f5fe,stroke:#01579b,stroke-width:2px;")
+    lines.append("    classDef process fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;")
+    lines.append("    classDef output fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,rx:10,ry:10;")
+    
+    return "\n".join(lines)
+
+
+def inspect_library(
+    library_name: str,
+    output_path: Optional[str] = None,
+    include_private: bool = False,
+    include_imported: bool = False
+):
+    """
+    Dynamically inspect a Python library, analyze dependencies using Network Analysis, and generate a report.
+    """
+    
+    # --- 1. 动态导入主库 (带 sys.argv 保护) ---
+    _old_argv = sys.argv
+    sys.argv = [sys.argv[0]]
+
+    submodules = []
+    main_module = None
+
+    try:
+        try:
+            main_module = importlib.import_module(library_name)
+            submodules.append(main_module)
+        except ImportError as e:
+            print(f"❌ Error: Could not import library '{library_name}'. Reason: {e}")
+            return
+        except Exception as e:
+            print(f"❌ Error: An unexpected error occurred while importing '{library_name}': {e}")
+            return
+
+        print(f"🔍 Analyzing dependencies for '{library_name}' (Network Analysis Phase)...")
+        
+        if hasattr(main_module, "__path__"):
+            for importer, modname, ispkg in pkgutil.walk_packages(main_module.__path__, main_module.__name__ + "."):
+                try:
+                    sub_mod = importlib.import_module(modname)
+                    submodules.append(sub_mod)
+                except Exception:
+                    continue
+    finally:
+        sys.argv = _old_argv
+
+    lines = []
+    lines.append(f"# Documentation for `{library_name}`")
+    lines.append(f"**File Path:** `{getattr(main_module, '__file__', 'Built-in/Unknown')}`\n")
+    
+    doc = inspect.getdoc(main_module)
+    if doc:
+        lines.append("## Module Docstring")
+        lines.append(f"```text\n{doc}\n```\n")
+
+    # ==========================================
+    # Phase 1: Network Construction & Analysis
+    # ==========================================
+    
+    G = nx.DiGraph() if HAS_NETWORKX else None
+    
+    internal_modules_rank = Counter() 
+    external_libs_rank = Counter()    
+    dependency_graph = defaultdict(set) 
+
+    for mod in submodules:
+        current_mod_name = mod.__name__
+        if HAS_NETWORKX:
+            G.add_node(current_mod_name, type='internal')
+        
+        for name, obj in inspect.getmembers(mod):
+            obj_module = getattr(obj, "__module__", None)
+            
+            if not obj_module: continue
+            if obj_module == current_mod_name: continue
+
+            dependency_graph[current_mod_name].add(obj_module)
+
+            if obj_module.startswith(library_name):
+                internal_modules_rank[obj_module] += 1
+                if HAS_NETWORKX:
+                    G.add_edge(current_mod_name, obj_module)
+            else:
+                top_level_pkg = obj_module.split('.')[0]
+                if top_level_pkg not in ['builtins', 'sys', 'os', 'typing']:
+                    external_libs_rank[top_level_pkg] += 1
+                    if HAS_NETWORKX:
+                        G.add_node(top_level_pkg, type='external')
+                        G.add_edge(current_mod_name, top_level_pkg)
+
+    lines.append("## 📊 Network & Architecture Analysis")
+    
+    if not HAS_NETWORKX:
+        lines.append("> ⚠️ `networkx` is not installed. Advanced metrics are disabled.\n")
+
+    # --- 1. 外部依赖 ---
+    lines.append("### 🌍 Top External Dependencies")
+    if external_libs_rank:
+        lines.append("| Library | Usage Count |")
+        lines.append("| :--- | :--- |")
+        for lib, count in external_libs_rank.most_common(10):
+            lines.append(f"| **{lib}** | {count} |")
+    else:
+        lines.append("_No significant external dependencies._")
+    lines.append("\n")
+
+    # --- 2. 网络指标分析 ---
+    if HAS_NETWORKX and len(G.nodes) > 0:
+        lines.append("### 🕸️ Network Metrics (Advanced)")
+        
+        # PageRank
+        try:
+            pagerank = nx.pagerank(G, alpha=0.85)
+            sorted_pr = sorted(pagerank.items(), key=lambda x: x[1], reverse=True)
+            
+            lines.append("#### 👑 Top Modules by PageRank (Authority)")
+            lines.append("| Rank | Module | Score | Type |")
+            lines.append("| :--- | :--- | :--- | :--- |")
+            
+            for i, (node, score) in enumerate(sorted_pr[:10]):
+                node_type = "Internal" if node.startswith(library_name) else "External"
+                short_name = node.replace(library_name + ".", "")
+                lines.append(f"| {i+1} | `{short_name}` | {score:.4f} | {node_type} |")
+            lines.append("\n")
+        except Exception:
+            pass
+
+    # --- 3. 可视化 (Mermaid) ---
+    lines.append("### 🗺️ Dependency & Architecture Map")
+    
+    mermaid_lines = ["graph TD"]
+    mermaid_lines.append("    classDef core fill:#f96,stroke:#333,stroke-width:2px;")
+    mermaid_lines.append("    classDef external fill:#9cf,stroke:#333,stroke-width:1px;")
+    
+    # 筛选节点
+    if HAS_NETWORKX:
+        top_nodes = set(n for n, s in sorted_pr[:20])
+    else:
+        top_nodes = set(x[0] for x in internal_modules_rank.most_common(20))
+
+    edges_to_draw = set()
+    
+    # A. 绘制模块依赖
+    source_data = G.edges() if HAS_NETWORKX else []
+    if not HAS_NETWORKX:
+        for src, targets in dependency_graph.items():
+            for tgt in targets:
+                source_data.append((src, tgt))
+
+    for u, v in source_data:
+        if u in top_nodes or v in top_nodes:
+            short_u = u.replace(library_name + ".", "").split('.')[-1]
+            short_v = v.replace(library_name + ".", "").split('.')[-1]
+            if not v.startswith(library_name): short_v = v.split('.')[0]
+            
+            if short_u == short_v: continue
+            edge_id = f"{short_u}->{short_v}"
+            if edge_id in edges_to_draw: continue
+            edges_to_draw.add(edge_id)
+
+            arrow = "-.->" if not v.startswith(library_name) else "-->"
+            mermaid_lines.append(f"    {short_u}{arrow}{short_v}")
+            
+            if u.startswith(library_name): mermaid_lines.append(f"    class {short_u} core;")
+            else: mermaid_lines.append(f"    class {short_u} external;")
+            
+            if v.startswith(library_name): mermaid_lines.append(f"    class {short_v} core;")
+            else: mermaid_lines.append(f"    class {short_v} external;")
+
+    # B. (增强) 绘制类继承关系 - 对所有模块生效
+    # 收集所有类
+    all_classes = []
+    for mod in submodules:
+        for name, obj in inspect.getmembers(mod, inspect.isclass):
+            if getattr(obj, "__module__", "").startswith(library_name):
+                all_classes.append((name, obj))
+
+    # 如果类不是特别多，就画出来
+    if len(all_classes) < 50: 
+        for name, obj in all_classes:
+            for base in obj.__bases__:
+                base_name = base.__name__
+                if base_name == 'object': continue
+                
+                # 绘制继承箭头: Class --|> Base
+                mermaid_lines.append(f"    {name} --|> {base_name}")
+                mermaid_lines.append(f"    class {name} core;")
+                
+                if base.__module__.split('.')[0] != library_name:
+                    mermaid_lines.append(f"    class {base_name} external;")
+                else:
+                    mermaid_lines.append(f"    class {base_name} core;")
+
+    lines.append("<details><summary>Show Mermaid Graph</summary>\n")
+    lines.append("```mermaid")
+    lines.append("\n".join(mermaid_lines))
+    lines.append("```\n</details>\n")
+
+    # ==========================================
+    # Phase 2: Surface Level Inspection & Logic Flow
+    # ==========================================
+    lines.append("## 📑 Top-Level API Contents & Logic Flow")
+
+    if hasattr(main_module, "__all__"):
+        all_names = main_module.__all__
+        using_all = True
+    else:
+        all_names = dir(main_module)
+        using_all = False
+    
+    members_data = []
+
+    for name in all_names:
+        if not include_private and not using_all and name.startswith("_"):
+            continue
+        
+        try:
+            obj = getattr(main_module, name)
+        except AttributeError:
+            continue
+
+        obj_module = getattr(obj, "__module__", None)
+        is_imported = False
+        if obj_module and not obj_module.startswith(library_name):
+            is_imported = True
+        
+        if not include_imported and is_imported:
+             if not using_all:
+                 continue
+
+        members_data.append((name, obj, is_imported))
+
+    classes = []
+    functions = []
+    
+    for name, obj, is_imported in members_data:
+        display_name = name + (" (imported)" if is_imported else "")
+        
+        if inspect.isclass(obj):
+            classes.append((display_name, obj))
+        elif inspect.isfunction(obj) or inspect.isbuiltin(obj):
+            functions.append((display_name, obj))
+
+    def get_info(obj):
+        try:
+            sig = str(inspect.signature(obj))
+        except (ValueError, TypeError):
+            sig = getattr(obj, "__text_signature__", "(...)")
+            if sig is None: sig = "(...)"
+        
+        doc = inspect.getdoc(obj) or "No documentation available."
+        return sig, doc
+
+    if functions:
+        lines.append("### 🔧 Functions")
+        for name, func in functions:
+            sig, doc = get_info(func)
+            lines.append(f"#### `{name}{sig}`")
+            lines.append(f"> {doc.splitlines()[0] if doc else ''}")
+            
+            # --- 新增：逻辑流可视化 ---
+            flow_chart = generate_function_flowchart(func)
+            if flow_chart:
+                lines.append("\n**Logic Flow:**")
+                lines.append("```mermaid")
+                lines.append(flow_chart)
+                lines.append("```\n")
+            
+            lines.append(f"<details><summary>Full Docstring</summary>\n\n```text\n{doc}\n```\n</details>\n")
+
+    if classes:
+        lines.append("### 📦 Classes")
+        for name, cls in classes:
+            sig, doc = get_info(cls)
+            lines.append(f"#### `class {name}{sig}`")
+            lines.append(f"{doc.splitlines()[0] if doc else ''}\n")
+            
+            methods = inspect.getmembers(cls, predicate=lambda x: inspect.isfunction(x) or inspect.ismethod(x))
+            if methods:
+                lines.append("| Method | Signature | Description |")
+                lines.append("| :--- | :--- | :--- |")
+                for m_name, m_obj in methods:
+                    if not include_private and m_name.startswith("_") and m_name != "__init__":
+                        continue
+                    m_sig, m_doc = get_info(m_obj)
+                    short_doc = m_doc.splitlines()[0] if m_doc else "-"
+                    short_doc = short_doc.replace("|", "\\|")
+                    lines.append(f"| **{m_name}** | `{m_sig}` | {short_doc} |")
+            lines.append("\n")
+
+    # --- Output ---
+    content = "\n".join(lines)
+    
+    if output_path:
+        if not output_path.endswith(".md"):
+            output_path += ".md"
+        
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir)
+            except OSError as e:
+                print(f"❌ Error creating directory {output_dir}: {e}")
+                return
+
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"✅ Documentation saved to: {os.path.abspath(output_path)}")
+        except IOError as e:
+            print(f"❌ Error writing file: {e}")
+    else:
+        print(content)
