@@ -3728,3 +3728,837 @@ def inspect_library(
             print(f"❌ Error writing file: {e}")
     else:
         print(content)
+
+
+=================================================================================================================
+
+
+# 8,
+
+import inspect # Inspect live objects and class internals
+import importlib # Dynamically import modules
+import sys
+import os
+import pkgutil # Walk through packages/modules (used to find submodules)
+import ast # Parse Python code into Abstract Syntax Trees (AST) for code analysis/refactoring
+import re
+from collections import Counter, defaultdict, deque
+from typing import Any, List, Dict, Optional, Tuple, Set
+import json
+import html # Used for Mermaid MD to HTML conversion, escaping HTML characters
+
+
+# Attempt to import networkx for advanced network analysis
+try:
+    import networkx as nx
+    HAS_NETWORKX = True
+except ImportError:
+    HAS_NETWORKX = False
+
+
+# --- Helper: ID Sanitizer ---
+def sanitize_id(name: str) -> str:
+    """
+    Description
+    ----------
+    Convert an arbitrary string into a valid Mermaid node ID. Mermaid node IDs
+    should only contain letters, digits and underscores.
+
+    Args
+    -----
+    name : str
+        The input string to sanitize into a Mermaid-safe identifier.
+
+    Returns
+    --------
+    str
+        A sanitized identifier containing only [A-Za-z0-9_] and guaranteed not
+        to start with a digit (an underscore is prepended if necessary).
+
+    Notes
+    -------
+    - 1, Non-alphanumeric characters (including dots, spaces and symbols) are
+      replaced with underscores.
+    - 2, If the resulting identifier starts with a digit, a leading underscore is
+      added to ensure it is a valid ID for Mermaid.
+    - 3, Empty input returns an empty string.
+    """
+    # Replace dots, Spaces, and special symbols with underscores
+    clean = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    # Avoid starting with a digit
+    if clean and clean[0].isdigit():
+        clean = "_" + clean
+    return clean
+
+
+# --- Helper: 1. Single-function Logic Analysis (Micro) ---
+class LogicNode:
+    """Represents a node in a function flowchart.
+
+    Description
+    ----------
+    Models a single element in a data/logic flow diagram extracted from a
+    function's AST. Nodes denote inputs, processing steps, or outputs and
+    are used to assemble Mermaid flowcharts showing data production and use.
+
+    Attributes
+    ----------
+    id : str
+        Unique identifier for the node (used when rendering the diagram).
+    label : str
+        Human-readable label displayed inside the node.
+    node_type : str
+        One of "input", "process", or "output" — controls node shape/style.
+    edges_in : List[Tuple[str, str]]
+        Incoming edges as (source_node_id, variable_name) pairs indicating
+        which node produced each input variable.
+    """
+    def __init__(self, id, label, node_type="process"):
+        self.id = id
+        self.label = label
+        self.node_type = node_type # input, process, output
+        self.edges_in = [] # List of (source_id, var_name)
+
+class AdvancedFlowVisitor(ast.NodeVisitor):
+    """
+    Description
+    ----------
+    Parses function source code to build a data flow graph.
+    Tracks the chain of variable production (Definition) -> consumption (Usage).
+    """
+    def __init__(self):
+        """
+        Description
+        ----------
+        Initialize visitor state used to accumulate flow nodes and track current producers.
+
+        Args
+        -----
+        None
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Initializes:
+          - self.nodes: list of LogicNode instances discovered
+          - self.current_producers: mapping var_name -> node_id for latest producer
+          - self.counter: integer counter for generating unique node ids
+        """
+        self.nodes = []
+        self.current_producers = {} # var_name -> node_id (Tracks which node currently produces each variable)
+        
+        self.counter = 0
+
+    def _get_id(self):
+        """
+        Description
+        ----------
+        Generate a new unique internal node identifier.
+
+        Args
+        -----
+        None
+
+        Returns
+        --------
+        str
+            A new unique node id string (e.g., "Node1").
+
+        Notes
+        -------
+        - Increments an internal counter on each call.
+        """
+        self.counter += 1
+        return f"Node{self.counter}"
+
+    def _resolve_inputs(self, input_vars: List[str]) -> List[Tuple[str, str]]:
+        """
+        Description
+        ----------
+        Resolve which previously created nodes produced the given input variables.
+
+        Args
+        -----
+        input_vars : List[str]
+            Variable names referenced on the right-hand side of an expression.
+
+        Returns
+        --------
+        List[Tuple[str, str]]
+            List of (source_node_id, var_name) pairs for known producers.
+
+        Notes
+        -------
+        - Only returns producers that were previously recorded in self.current_producers.
+        """
+        edges = []
+        for var in input_vars:
+            if var in self.current_producers:
+                source_id = self.current_producers[var]
+                edges.append((source_id, var))
+        return edges
+
+    def _extract_names(self, node) -> List[str]:
+        """
+        Description
+        ----------
+        Extract variable names referenced inside an AST node.
+
+        Args
+        -----
+        node : ast.AST
+            The AST node to inspect for Name and Attribute usage.
+
+        Returns
+        --------
+        List[str]
+            Unique list of variable names found (includes simple names and 'self.attr' for attributes).
+
+        Notes
+        -------
+        - Only collects names used in load (read) context.
+        - Captures simple `Name` nodes and `self.attr` attributes; other attributes are visited recursively.
+        """
+        names = []
+        class NameCollector(ast.NodeVisitor):
+            def visit_Name(self, n):
+                if isinstance(n.ctx, ast.Load):
+                    names.append(n.id)
+            def visit_Attribute(self, n):
+                # Attempt to capture self.xxx
+                if isinstance(n.value, ast.Name) and n.value.id == 'self':
+                    names.append(f"self.{n.attr}")
+                self.generic_visit(n)
+        
+        if node:
+            NameCollector().visit(node)
+        return list(set(names)) # Remove duplicates
+
+    def visit_FunctionDef(self, node):
+        """
+        Description
+        ----------
+        Handle a FunctionDef AST node: register input parameter node and traverse body.
+
+        Args
+        -----
+        node : ast.FunctionDef
+            The function definition AST node.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Creates an "Input" LogicNode if the function has parameters and marks parameters as produced
+          by that Input node so subsequent assignments can reference them as inputs.
+        - Continues traversal into the function body to collect assignments, calls and return nodes.
+        """
+        args = []
+        arg_labels = []
+        
+        # Extract parameters and type annotations
+        all_args = node.args.args + node.args.kwonlyargs
+        if node.args.vararg: all_args.append(node.args.vararg)
+        if node.args.kwarg: all_args.append(node.args.kwarg)
+
+        for arg in all_args:
+            var_name = arg.arg
+            args.append(var_name)
+            
+            # Attempt to get type annotation
+            ann = ""
+            if arg.annotation:
+                try:
+                    if hasattr(ast, 'unparse'):
+                        ann = ": " + ast.unparse(arg.annotation)
+                    else:
+                        ann = ": " + str(arg.annotation)
+                except: pass
+            arg_labels.append(f"{var_name}{ann}")
+            
+        if args:
+            node_id = "Input"
+            # Mermaid node label
+            label = "Input\\n" + "\\n".join(arg_labels)
+            logic_node = LogicNode(node_id, label, node_type="input")
+            self.nodes.append(logic_node)
+            
+            # Register these variables as produced by the Input node
+            for arg in args:
+                self.current_producers[arg] = node_id
+                # Also register self.arg (simplified handling for common __init__ pattern)
+                if 'self' in args:
+                    self.current_producers[f"self.{arg}"] = node_id
+        
+        # Continue traversing the function body
+        for item in node.body:
+            self.visit(item)
+
+    def visit_Assign(self, node):
+        """
+        Description
+        ----------
+        Handle simple assignment AST nodes by delegating to the assignment handler.
+
+        Args
+        -----
+        node : ast.Assign
+            The assignment AST node.
+
+        Returns
+        --------
+        None
+        """
+        self._handle_assign(node, node.targets)
+
+    def visit_AnnAssign(self, node):
+        """
+        Description
+        ----------
+        Handle annotated assignment (PEP 526) such as `x: int = value`.
+
+        Args
+        -----
+        node : ast.AnnAssign
+            Annotated assignment AST node.
+
+        Returns
+        --------
+        None
+        """
+        # Handle annotated assignment: x: int = value
+        if node.value:
+            self._handle_assign(node, [node.target], annotation=node.annotation)
+
+    def _handle_assign(self, node, targets, annotation=None):
+        """
+        Description
+        ----------
+        Core handler for assignment-like statements. Analyzes RHS inputs, determines operation label,
+        creates a LogicNode representing the assignment/call/op, and updates producer mapping.
+
+        Args
+        -----
+        node : ast.AST
+            The original AST node for context (Assign or AnnAssign).
+        targets : List[ast.AST]
+            Left-hand side target nodes.
+        annotation : Optional[ast.AST]
+            Optional annotation for the target (for AnnAssign).
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Recognizes Calls, BinaryOps and Constants on the RHS to provide a richer label.
+        - Supports simple target types: Name and self.Attribute.
+        - Updates self.current_producers so later statements can resolve dependencies.
+        """
+        input_vars = self._extract_names(node.value)
+        
+        # --- 1. 智能标签生成与噪音过滤 ---
+        label = "Assign"
+        node_type = "process" # 默认为普通处理
+        
+        # A. 函数调用 (重点关注)
+        if isinstance(node.value, ast.Call):
+            func_name = self._get_func_name(node.value)
+            
+            # [Filter] 过滤掉对理解逻辑无帮助的简单类型转换
+            if func_name in ['int', 'str', 'float', 'list', 'tuple', 'len', 'print', 'type']:
+                return 
+            
+            label = f"<b>Call:</b> {func_name}"
+            
+            # [Highlight] 核心变换识别：AI 模型、数学运算、I/O 操作
+            # 这些是初学者最关心的 "Black Box" 内部发生了什么
+            core_keywords = [
+                'torch', 'np', 'numpy', 'pd', 'pandas', # 库名
+                'model', 'net', 'layer', 'encoder', 'decoder', # 模型对象
+                'predict', 'forward', 'transform', 'encode', 'decode', 'process', # 核心动作
+                'read', 'load', 'save', 'write', 'get', 'post' # I/O
+            ]
+            if any(k in func_name.lower() for k in core_keywords):
+                node_type = "core_process"
+
+        # B. 运算操作
+        elif isinstance(node.value, ast.BinOp):
+            op = type(node.value.op).__name__
+            label = f"<b>Op:</b> {op}"
+        
+        # C. 常量赋值 (通常是配置，初学者不需要关心，除非是默认值)
+        elif isinstance(node.value, ast.Constant):
+             return # 直接忽略，减少图表噪音
+        
+        # --- 2. 输出变量处理 (带类型注解) ---
+        outputs = []
+        output_labels = []
+        for target in targets:
+            if isinstance(target, ast.Name):
+                var_name = target.id
+                outputs.append(var_name)
+                
+                ann_str = ""
+                if annotation and hasattr(ast, 'unparse'):
+                    try: ann_str = ": " + ast.unparse(annotation).replace('\n', '')
+                    except: pass
+                output_labels.append(f"{var_name}{ann_str}")
+            elif isinstance(target, ast.Attribute):
+                if isinstance(target.value, ast.Name) and target.value.id == 'self':
+                    var_name = f"self.{target.attr}"
+                    outputs.append(var_name)
+                    output_labels.append(var_name)
+
+        if outputs:
+            node_id = self._get_id()
+            # 使用 HTML 换行，让 "动作" 和 "结果" 分层显示
+            full_label = f"{label}<br/>⬇<br/>" + ", ".join(output_labels)
+            
+            logic_node = LogicNode(node_id, full_label, node_type=node_type)
+            logic_node.edges_in = self._resolve_inputs(input_vars)
+            
+            self.nodes.append(logic_node)
+            
+            for out in outputs:
+                self.current_producers[out] = node_id
+
+    # --- [New] 新增：控制流可视化 (Decision Logic) ---
+    def visit_If(self, node):
+        """
+        Description
+        ----------
+        Visualize decision points. Beginners need to know if there's a fork in the logic.
+        """
+        test_code = "Condition"
+        if hasattr(ast, 'unparse'):
+            try: test_code = ast.unparse(node.test).replace('\n', ' ').replace('"', "'")
+            except: pass
+            
+        node_id = self._get_id()
+        label = f"<b>Decision</b><br/>If {test_code}?"
+        logic_node = LogicNode(node_id, label, node_type="decision")
+        
+        input_vars = self._extract_names(node.test)
+        logic_node.edges_in = self._resolve_inputs(input_vars)
+        self.nodes.append(logic_node)
+        
+        # 继续遍历子节点
+        self.generic_visit(node)
+    
+    
+    
+    def visit_Expr(self, node):
+        """
+        Description
+        ----------
+        Handle expression statements, commonly used for standalone function calls with side-effects.
+
+        Args
+        -----
+        node : ast.Expr
+            The expression AST node.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Creates a LogicNode for the call but does not update producers because such calls usually
+          don't assign to variables.
+        """
+        # Handle standalone function calls (no assignment), e.g., print(), model.eval()
+        if isinstance(node.value, ast.Call):
+            input_vars = self._extract_names(node.value)
+            func_name = self._get_func_name(node.value)
+            
+            node_id = self._get_id()
+            logic_node = LogicNode(node_id, f"Call: {func_name}")
+            logic_node.edges_in = self._resolve_inputs(input_vars)
+            
+            self.nodes.append(logic_node)
+            # Such calls usually have side effects but no explicit return variables, so current_producers is not updated
+
+    def visit_Return(self, node):
+        """
+        Description
+        ----------
+        Handle return statements by creating an output LogicNode that links to its input expressions.
+
+        Args
+        -----
+        node : ast.Return
+            The return statement AST node.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Attempts to stringify the returned expression when possible for clearer labels.
+        """
+        input_vars = []
+        ret_str = "None"
+        if node.value:
+            input_vars = self._extract_names(node.value)
+            if hasattr(ast, 'unparse'):
+                try: ret_str = ast.unparse(node.value)
+                except: pass
+            else:
+                ret_str = "Expression"
+        
+        node_id = "Return"
+        logic_node = LogicNode(node_id, f"Return\\n{ret_str}", node_type="output")
+        logic_node.edges_in = self._resolve_inputs(input_vars)
+        self.nodes.append(logic_node)
+
+    def _get_func_name(self, node):
+        """
+        Description
+        ----------
+        Derive a human-readable function name for an ast.Call node.
+
+        Args
+        -----
+        node : ast.Call
+            The call AST node whose target name should be extracted.
+
+        Returns
+        --------
+        str
+            A best-effort string representing the function being called (e.g., "foo" or "obj.method").
+
+        Notes
+        -------
+        - For attribute calls returns "<owner>.<attr>" if possible; otherwise returns a fallback "func".
+        """
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            return getattr(node.func.value, 'id', 'obj') + "." + node.func.attr
+        return "func"
+
+def generate_function_flowchart(func_obj) -> str:
+    """
+    Description
+    ----------
+    Generate a Mermaid data flow diagram for a single Python function using AST analysis.
+
+    Args
+    -----
+    func_obj : callable
+        The function object to analyze.
+
+    Returns
+    --------
+    str
+        Mermaid markup representing the function's data flow graph (empty string on failure).
+
+    Notes
+    -------
+    - Uses inspect.getsource and ast.parse to build an AST, then visits it with AdvancedFlowVisitor.
+    - Returns an empty string if source extraction or parsing fails (e.g., builtins or dynamic functions).
+    """
+    try:
+        source = inspect.getsource(func_obj)
+        source = inspect.cleandoc(source)
+        tree = ast.parse(source)
+    except (OSError, TypeError, IndentationError, SyntaxError):
+        return ""
+
+    visitor = AdvancedFlowVisitor()
+    visitor.visit(tree)
+
+    if not visitor.nodes:
+        return ""
+
+        # Build Mermaid
+    lines = ["flowchart TD"] # Use top-down layout, suitable for showing flow
+    
+    # Style definitions [Modified for Mental Model]
+    # Input: Blue (Data Entry)
+    lines.append("    classDef input fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,rx:5,ry:5;")
+    # Process: Gray/White (Standard Glue Code)
+    lines.append("    classDef process fill:#fff,stroke:#bdbdbd,stroke-width:1px;")
+    # Core Process: Yellow/Gold (The "Magic" happens here - AI/Math/IO)
+    lines.append("    classDef core_process fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,rx:5,ry:5;") 
+    # Decision: Purple (Logic Branching)
+    lines.append("    classDef decision fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1px,rx:5,ry:5,stroke-dasharray: 5 5;")
+    # Output: Green (Result)
+    lines.append("    classDef output fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,rx:5,ry:5;")
+    
+    # Draw nodes
+    for node in visitor.nodes:
+        # 1. Sanitize ID
+        safe_node_id = sanitize_id(node.id) 
+        
+        # 2. Escape special characters in Label
+        # [Fix] Replace newlines with <br/> for HTML labels, and escape quotes
+        safe_label = node.label.replace('"', "'").replace('\n', '<br/>')
+        
+        shape_start, shape_end = "[", "]"
+        if node.node_type == "input": shape_start, shape_end = "([", "])"
+        if node.node_type == "output": shape_start, shape_end = "([", "])"
+        if node.node_type == "decision": shape_start, shape_end = "{{", "}}" # Rhombus for decision
+        
+        # Use quotes around Label to ensure special characters (like spaces, =) are displayed correctly
+        lines.append(f'    {safe_node_id}{shape_start}"{safe_label}"{shape_end}:::{node.node_type}')
+        
+        for source_id, var_name in node.edges_in:
+            safe_source_id = sanitize_id(source_id)
+            # Edge labels also need to be sanitized to remove characters that might break syntax
+            safe_var = var_name.replace('"', "'").replace('|', '/').replace('\n', '')
+            
+            # Use dotted line for decision flows to distinguish them
+            arrow = "-.->" if "Decision" in source_id else "-->"
+            lines.append(f'    {safe_source_id} {arrow} "{safe_var}" {safe_node_id}')
+
+    return "\n".join(lines)
+
+# --- Helper: 2. Global Call Graph Analysis (Macro) ---
+
+class GlobalCallGraphVisitor(ast.NodeVisitor):
+    """
+    Description
+    ----------
+    Analyze the entire module's AST to build a call graph between functions.
+    Traverses the AST to find function definitions and function calls, linking callers to callees.
+    """
+    def __init__(self, known_functions: Set[str]):
+        """
+        Description
+        ----------
+        Initialize the visitor with a set of known internal functions.
+
+        Args
+        -----
+        known_functions : Set[str]
+            A set of function names defined within the library being analyzed. Used to filter out built-in or external calls.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Initializes `self.calls` to store the graph edges.
+        - Initializes `self.dependency_map` for closure calculation.
+        - Sets `self.current_function` to "Main_Script" to capture top-level calls.
+        """
+        self.known_functions = known_functions # Set of all function names defined in the library
+        self.calls = [] # List of (caller, callee, arg_names)
+        self.current_function = "Main_Script" # Default to top-level script
+        # New: adjacency list for dependency closure calculation
+        self.dependency_map = defaultdict(set) # caller -> set(callees)
+
+    def visit_FunctionDef(self, node):
+        """
+        Description
+        ----------
+        Handle function definitions to track the current caller context.
+
+        Args
+        -----
+        node : ast.FunctionDef
+            The function definition AST node.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Updates `self.current_function` to the name of the function being visited.
+        - Restores the previous function name after visiting the body (handling nested functions).
+        """
+        prev_function = self.current_function
+        self.current_function = node.name
+        self.generic_visit(node)
+        self.current_function = prev_function
+
+    def visit_Call(self, node):
+        """
+        Description
+        ----------
+        Handle function calls to record dependencies between the current function and the callee.
+
+        Args
+        -----
+        node : ast.Call
+            The function call AST node.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Extracts the callee name (handling simple names and attributes like `self.method`).
+        - Extracts argument names for visualization.
+        - Filters calls: only records calls to functions in `known_functions` or `self.*` calls.
+        - Updates `self.calls` and `self.dependency_map`.
+        """
+        # Extract the name of the called function
+        callee_name = ""
+        if isinstance(node.func, ast.Name):
+            callee_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            # Handle self.method() or module.func()
+            callee_name = node.func.attr
+        
+        if callee_name:
+            # Extract argument names (for data flow visualization)
+            args = []
+            for arg in node.args:
+                if isinstance(arg, ast.Name):
+                    args.append(arg.id)
+            
+            # Only record calls to functions defined in our library (to avoid including built-ins like print, len)
+            # Or if it's a self.xxx call, we also record it (assuming it's an internal class call)
+            if callee_name in self.known_functions or (isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id == 'self'):
+                self.calls.append((self.current_function, callee_name, args))
+                self.dependency_map[self.current_function].add(callee_name)
+        
+        self.generic_visit(node)
+
+# --- Helper: 3. Entry Analysis (Navigator: How to Drive) ---
+class EntryAnalysisVisitor(ast.NodeVisitor):
+    """
+    Description
+    ----------
+    Analyze entry points in the code, especially the use of argparse.
+    """
+    def __init__(self):
+        """
+        Description
+        ----------
+        Initialize visitor state for entry point analysis.
+
+        Args
+        -----
+        None
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Initializes `self.has_main_block` to False.
+        - Initializes `self.args` to store discovered CLI arguments.
+        """
+        self.has_main_block = False
+        self.args = [] # List of (arg_name, help_text)
+
+    def visit_If(self, node):
+        """
+        Description
+        ----------
+        Detect `if __name__ == "__main__":` blocks to identify script entry points.
+
+        Args
+        -----
+        node : ast.If
+            The If statement AST node.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Sets `self.has_main_block` to True if the standard main guard is found.
+        """
+        # Detect if __name__ == "__main__":
+        try:
+            if (isinstance(node.test, ast.Compare) and 
+                isinstance(node.test.left, ast.Name) and 
+                node.test.left.id == "__name__" and 
+                isinstance(node.test.comparators[0], ast.Constant) and 
+                node.test.comparators[0].value == "__main__"):
+                self.has_main_block = True
+        except: pass
+        self.generic_visit(node)
+
+    def visit_Call(self, node):
+        """
+        Description
+        ----------
+        Detect `parser.add_argument(...)` calls to extract CLI argument definitions.
+
+        Args
+        -----
+        node : ast.Call
+            The function call AST node.
+
+        Returns
+        --------
+        None
+
+        Notes
+        -------
+        - Extracts the argument name (e.g., '--input') and help text.
+        - Appends found arguments to `self.args`.
+        """
+        # Detect parser.add_argument(...)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == 'add_argument':
+            arg_name = "Unknown"
+            help_text = ""
+            
+            # Extract argument name (usually the first argument)
+            if node.args:
+                if isinstance(node.args[0], ast.Constant):
+                    arg_name = node.args[0].value
+            
+            # Extract help information
+            for kw in node.keywords:
+                if kw.arg == 'help' and isinstance(kw.value, ast.Constant):
+                    help_text = kw.value.value
+            
+            self.args.append((arg_name, help_text))
+        
+        self.generic_visit(node)
+
+# --- Helper: 4. Dependency Closure Calculation (Navigator: Extraction Guide) ---
+def get_dependency_closure(target_func: str, dependency_map: Dict[str, Set[str]]) -> Set[str]:
+    """
+    Description
+    ----------
+    Calculate the dependency closure of the target function (i.e., all other functions required to run it).
+
+    Args
+    -----
+    target_func : str
+        The name of the function to analyze.
+    dependency_map : Dict[str, Set[str]]
+        Adjacency list representing the call graph (caller -> callees).
+
+    Returns
+    --------
+    Set[str]
+        A set of function names representing the transitive closure of dependencies.
+
+    Notes
+    -------
+    - Uses Breadth-First Search (BFS) to traverse the dependency graph.
+    """
+    closure = set()
+    queue = deque([target_func])
+    visited = set()
+
+    while queue:
+        current = queue.popleft()
+        if current in visited: continue
+        visited.add(current)
+        closure.add(current)
+
+        if current in dependency_map:
+            for dep in dependency_map[curr
