@@ -710,7 +710,9 @@ def contact_map_vis(
 ======================================================================================================================================================、
 
 # 3, 稍微正常点的一个更新版本
+# 残基互作热图+堆叠track+分类图bar未覆盖区域渲染为透明, 但是数值曲线图没有标度, 热图也没有token标度
 import os
+import re
 import numpy as np
 from typing import Optional, List, Union, Dict, Any
 from Bio.PDB import MMCIFParser, Polypeptide
@@ -774,7 +776,7 @@ def contact_map_vis(
     """
 
     # first, we prepare output path
-    job_name = os.path.splitext(os.path.basename(mmcif_file))[0].split("_")[1] 
+    job_name = re.match(r'fold_(.*)_model_\d+\.cif', os.path.basename(mmcif_file)).group(1) 
     
     # for computing contact map, we need to load the structure and extract representative atoms
     def _load_representative_atoms(mmcif_path, target_chains=None):
@@ -1062,13 +1064,22 @@ def contact_map_vis(
             if not colors_list: colors_list = ["#FFFFFF"] # Fallback
             custom_cmap = ListedColormap(colors_list)
             
+            # Mask the background (-1) to make it transparent
+            masked_row = np.ma.masked_where(int_row == -1, int_row)
+
             # Plot Top
             # We need to mask -1 values to be transparent or white
-            # Or just set background color of axes
-            ax_t_top.imshow(int_row, cmap=custom_cmap, aspect="auto", interpolation="nearest")
-            
-            # Plot Left (Transpose)
-            ax_t_left.imshow(int_row.T, cmap=custom_cmap, aspect="auto", interpolation="nearest")
+            if len(unique_cats) > 0:
+                # Determine vmin/vmax to ensure correct color mapping
+                vmin, vmax = 0, len(unique_cats) - 1
+                if vmin == vmax: # Single category case
+                    vmin -= 0.5
+                    vmax += 0.5
+
+                ax_t_top.imshow(masked_row, cmap=custom_cmap, aspect="auto", interpolation="nearest", vmin=vmin, vmax=vmax)
+                
+                # Plot Left (Transpose)
+                ax_t_left.imshow(masked_row.T, cmap=custom_cmap, aspect="auto", interpolation="nearest", vmin=vmin, vmax=vmax)
             
         else:
             # Numerical: Plot Line without Fill (there is no need to fill, cause we do not know the baseline)
@@ -1147,3 +1158,4 @@ def contact_map_vis(
     plt.savefig(f"{out_path}/{job_name}_contact_map.pdf", bbox_inches='tight')
     plt.savefig(f"{out_path}/{job_name}_contact_map.png", bbox_inches='tight', dpi=300)
     plt.close(fig)
+
