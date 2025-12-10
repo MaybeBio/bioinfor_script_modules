@@ -20,3 +20,14 @@ git branch -M main
 git remote add origin https://github.com/MaybeBio/同名仓库.git
 6, 尝试推送
 git push -u origin main
+
+
+# 如果已经commit过了, 第2次或者是后续更新推送
+7, 查看哪些文件被修改了/查看当前状态
+git status
+8, 添加修改到暂存区(添加所有修改的文件)
+git add .
+9, 填写本次更新的说明信息
+git commit -m "Update README with new documentation and examples"
+10, 推送到远程仓库
+git push
