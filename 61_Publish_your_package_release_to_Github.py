@@ -75,3 +75,5 @@ python -m build
 # --notes: 说明文字
 gh release create v0.1.0 dist/* --title "v0.1.0 Initial Release" --notes "First release with CLI support."
 (这里需要gh登入, 但是gh不确定)
+
+# 如果这里gh不成功, 就试试1的方法git tag+git push然后手动上传
