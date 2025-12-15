@@ -28,3 +28,29 @@ for start in range(0, count, batch_size):
     handle.close()
     out_handle.write(data)
 out_handle.close()
+
+
+========================================================================================================
+
+# 2,
+
+Entrez.email = "your email"
+
+def fetch_pubmed_articles(query, max_results=100):
+    handle = Entrez.esearch(db="pubmed", term=query, retmax=max_results)
+    record = Entrez.read(handle)
+    handle.close()
+    id_list = record["IdList"]
+
+    articles = []
+    for article_id in id_list:
+        handle = Entrez.efetch(db="pubmed", id=article_id, rettype="abstract", retmode="text")
+        article = handle.read()
+        articles.append(article)
+        handle.close()
+
+    return articles
+
+query = "disease"
+articles = fetch_pubmed_articles(query)
+
