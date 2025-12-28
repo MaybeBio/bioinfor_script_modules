@@ -30,6 +30,9 @@ def generate_shuffled_sequences(sequence: str, n: int, seed: Optional[int] = Non
 
 # 2, 对置换之后的序列所构建的零分布, 对真实观测值的构建的某一个统计量值所做的假设检验
 # 也就是置换检验
+# 重点在于统计量值可以更换, 可以换成其他的背景中的统计量值
+# 顺便做了多重假设检验的BH矫正, 这一块可以手写实现
+
 def _perform_permutation_test(self, 
                                   sequence: str, 
                                   observed_blocks: List[Charge_Block],
