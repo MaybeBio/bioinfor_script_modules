@@ -1,3 +1,5 @@
+# 提供PMID名单, 获取其在PMC数据库中的全文
+
 # db="pmc", 获取其中文本数据
 
 # 此处只使用retmode="xml", 不使用retmode="text", rettype="medline" 以及Medline.parse
