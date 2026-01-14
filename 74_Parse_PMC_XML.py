@@ -92,3 +92,171 @@ def _parse_soup_to_json(self, article_soup: Any) -> Dict[str, Any]:
                 paper_structure["body"].append(self._parse_section_recursive(sec))
                 
         return paper_structure
+
+
+
+====================================================================================================================================================
+
+# 3,
+
+def _parse_soup_to_json(self, article_soup: Any) -> Dict[str, Any]:
+        """
+        Parses a single <article> soup object into hierarchical JSON.
+        """
+        paper_structure = {
+            "title": "N/A",
+            "body": []
+        }
+        
+        # Title
+        title_node = article_soup.find('article-title')
+        if title_node:
+            paper_structure["title"] = title_node.get_text().strip()
+            
+        # Strategy: Parse Body First
+        body = article_soup.find('body')
+        sections_found = False
+        
+        if body:
+            # 1. Try finding top-level sections (standard JATS)
+            top_level_sections = body.find_all("sec", recursive=False)
+            
+            # 2. If no top-level sections, try finding ALL sections (loose structure)
+            if not top_level_sections:
+                 top_level_sections = body.find_all("sec")
+            
+            if top_level_sections:
+                for sec in top_level_sections:
+                    # Prevent parsing sub-sections as top-level if we used find_all(recursive=True)
+                    # Simple heuristic: only parse if parent is body or parent is not another sec
+                    if sec.parent.name == 'body' or sec.parent.name != 'sec':
+                         paper_structure["body"].append(self._parse_section_recursive(sec))
+                         sections_found = True
+            
+            # 3. If still no sections found (e.g. Letter to Editor), look for direct paragraphs
+            if not sections_found:
+                 direct_paragraphs = body.find_all("p", recursive=False)
+                 if direct_paragraphs:
+                     content = [p.get_text().strip() for p in direct_paragraphs]
+                     paper_structure["body"].append({
+                         "title": "Main Text",
+                         "content": content,
+                         "subsections": []
+                     })
+                     sections_found = True
+
+        # Strategy: If Body is empty or missing, check Abstract for structured content
+        # Many bioinformatics application notes put "Motivation", "Results" in Abstract
+        if not sections_found:
+            abstract = article_soup.find('abstract')
+            if abstract:
+                # Treat abstract sections as body sections
+                abs_sections = abstract.find_all("sec")
+                if abs_sections:
+                    for sec in abs_sections:
+                        paper_structure["body"].append(self._parse_section_recursive(sec))
+                else:
+                    # Flat abstract
+                    abstract_text = abstract.get_text().strip()
+                    if abstract_text:
+                        paper_structure["body"].append({
+                            "title": "Abstract-Only Content",
+                            "content": [abstract_text],
+                            "subsections": []
+                        })
+
+        return paper_structure
+
+
+
+
+
+
+======================================================================================================================================================
+
+# 4, 摘要要获取
+
+    def _parse_soup_to_json(self, article_soup: Any) -> Dict[str, Any]:
+        """
+        Parses a single <article> soup object into hierarchical JSON.
+        Now explicitly captures Abstract + Body.
+        """
+        paper_structure = {
+            "title": "N/A",
+            "body": []
+        }
+        
+        # 1. Title
+        title_node = article_soup.find('article-title')
+        if title_node:
+            paper_structure["title"] = title_node.get_text().strip()
+
+        # 2. Abstract (Always try to fetch this first)
+        # Abstract is usually under <front><article-meta><abstract>
+        abstract_node = article_soup.find('abstract')
+        if abstract_node:
+            # Check if abstract has sections (structured abstract)
+            abs_sections = abstract_node.find_all("sec")
+            if abs_sections:
+                # Structured abstract: add each sec
+                for sec in abs_sections:
+                    # Often abstract sections don't have titles in standard ways, handling varies
+                    # But _parse_section_recursive handles <title> if present.
+                    parsed_sec = self._parse_section_recursive(sec)
+                    if parsed_sec["title"] == "N/A":
+                        # Attempt to get a label if title is missing (common in some XMLs)
+                         parsed_sec["title"] = "Abstract Section"
+                    paper_structure["body"].append(parsed_sec)
+            else:
+                # Unstructured abstract: treat as one block
+                # Get all text clean
+                abs_text = abstract_node.get_text(separator=' ', strip=True)
+                if abs_text:
+                    paper_structure["body"].append({
+                        "title": "Abstract",
+                        "content": [abs_text], 
+                        "subsections": []
+                    })
+            
+        # 3. Body
+        body = article_soup.find('body')
+        sections_found = False
+        
+        if body:
+            # 1. Try finding top-level sections (standard JATS)
+            top_level_sections = body.find_all("sec", recursive=False)
+            
+            # 2. If no top-level sections, try finding ALL sections (loose structure)
+            if not top_level_sections:
+                 top_level_sections = body.find_all("sec")
+            
+            if top_level_sections:
+                for sec in top_level_sections:
+                    # Prevent parsing sub-sections as top-level if we used find_all(recursive=True)
+                    if sec.parent and sec.parent.name == 'sec':
+                        continue 
+
+                    paper_structure["body"].append(self._parse_section_recursive(sec))
+                    sections_found = True
+            
+            # 3. If still no sections found (e.g. Letter to Editor), look for direct paragraphs
+            if not sections_found:
+                 direct_paragraphs = body.find_all("p", recursive=False)
+                 if direct_paragraphs:
+                     content = [p.get_text().strip() for p in direct_paragraphs]
+                     paper_structure["body"].append({
+                         "title": "Main Text", 
+                         "content": content,
+                         "subsections": []
+                     })
+                     sections_found = True
+
+        # Fallback: If no body and no abstract was found earlier (very rare empty paper)
+        if not sections_found and not abstract_node:
+             # Try to see if there is anything at all?
+             pass
+
+        return paper_structure
+
+
+
