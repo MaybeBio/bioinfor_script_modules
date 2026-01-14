@@ -55,4 +55,40 @@ def parse_pmc_xml_to_json(soup):
 # result = parse_pmc_xml_to_json(xml_str)
 
 # 打印结果看看结构 (美化输出)
-# print(json.dumps(result, indent=2, ensure_ascii=False))
+print(json.dumps(result, indent=2, ensure_ascii=False))
+
+================================================================================================================================================
+
+# 2, 
+# 解析Entrez efetch返回的xml内容（pmc_full_xml）
+
+soup = BeautifulSoup(pmc_full_xml, 'xml')
+articles = soup.find_all('article')
+
+for article in articles:
+    parsed_json = self._parse_soup_to_json(article)
+
+# 其中_parse_soup_to_json函数
+def _parse_soup_to_json(self, article_soup: Any) -> Dict[str, Any]:
+        """
+        Parses a single <article> soup object into hierarchical JSON.
+        """
+        paper_structure = {
+            "title": "N/A",
+            "body": []
+        }
+        
+        # Title
+        title_node = article_soup.find('article-title')
+        if title_node:
+            paper_structure["title"] = title_node.get_text().strip()
+            
+        # Body
+        body = article_soup.find('body')
+        if body:
+            # we only parse top-level sections here
+            top_level_sections = body.find_all("sec", recursive=False)
+            for sec in top_level_sections:
+                paper_structure["body"].append(self._parse_section_recursive(sec))
+                
+        return paper_structure
