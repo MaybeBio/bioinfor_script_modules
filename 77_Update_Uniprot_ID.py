@@ -1,4 +1,5 @@
 # 用的依然是uniprot 的REST API, 参考https://www.uniprot.org/help/programmatic_access
+# 相比脚本76
 # 优化如下：
 # 1. http请求不直接requests.get, 优化TCP连接池, 复用TCP连接
 # 2. 针对uniprot ID变更情况进行防御性编程
