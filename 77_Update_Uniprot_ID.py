@@ -3,6 +3,7 @@
 # 1. http请求不直接requests.get, 优化TCP连接池, 复用TCP连接
 # 2. 针对uniprot ID变更情况进行防御性编程
 # 主要用于从一些其他数据库挖掘uniprot id时下游检查id时效性, 是否更新等, 在元数据上的处理
+# 参考 https://blog.csdn.net/weixin_62528784/article/details/158963913?spm=1001.2014.3001.5502
 
 import requests
 import time
