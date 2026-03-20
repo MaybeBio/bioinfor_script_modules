@@ -111,3 +111,58 @@ def fetch_PDB_id_from_uniprot(uni_id: str) -> pd.DataFrame:
                 ranges = property_entry["value"].split("=")[1]
                 pdb_info_list.append((pdb_id, chain_ids, ranges))
     return pd.DataFrame(pdb_info_list, columns=["PDB ID", "Chain IDs", "Ranges"])
+
+
+##################################################################################################################################################
+
+# 3.
+# 从PDB结构数据库中直接依据API获取uniprot对应的PDB id
+
+def fetch_PDB_id_from_uniprot(uni_id: str) -> set:
+    url = f"https://data.rcsb.org/rest/v1/core/polymer_entity_groups/{uni_id}"
+    response = requests.get(url).json()
+    all_pdb_ids = response['rcsb_group_container_identifiers']['group_member_ids']
+    pdb_ids = set(id[:4] for id in all_pdb_ids if not id.startswith("AF"))
+    return pdb_ids 
+
+###################################################################################################################################################
+
+# 4.
+# 合并法2以及法3, 可以将来源数据库RCSB PDB或者是Uniprot作为参数传入, 然后提供两个来源的pdb id, 可以将两个ID 合并起来作为防御性校验
+
+import requests
+from typing import *
+def fetch_pdbID_for_uniprotID(uniprot_ac:str, source:Literal["uniprot", "rcsb"] = "uniprot") -> set:
+    """ 
+    Description
+    -----------
+    给定一个UniProt ID, 返回对应的PDB ID集合.
+
+    Args
+    ----
+    uniprot_ac : str
+        UniProt的访问号.
+    source : Literal["uniprot", "rcsb"]
+        指定使用哪个数据库的API来获取PDB ID. 可选值为 "uniprot" 或 "rcsb", 默认为 "uniprot".
+        可以增加一个参数, 比如说是merge
+        
+    Returns
+    -------
+    set
+        包含对应PDB ID的集合.
+    """
+    # 两个不同的api接口
+    uniprot_url = f"https://rest.uniprot.org/uniprotkb/search?query=reviewed:true+AND+accession_id:{uniprot_ac}&fields=xref_pdb"
+    rcsb_url = f"https://data.rcsb.org/rest/v1/core/polymer_entity_groups/{uniprot_ac}"
+
+    if source == "uniprot":
+        response = requests.get(uniprot_url).json()
+        res = response['results'][0]['uniProtKBCrossReferences']
+        pdb_ids = set()
+        for db_entry in res:
+            pdb_ids.add(db_entry["id"])
+    elif source == "rcsb":
+        response = requests.get(rcsb_url).json()
+        all_pdb_ids = response['rcsb_group_container_identifiers']['group_member_ids']
+        pdb_ids = set(id[:4] for id in all_pdb_ids if not id.startswith("AF"))
+    return pdb_ids
