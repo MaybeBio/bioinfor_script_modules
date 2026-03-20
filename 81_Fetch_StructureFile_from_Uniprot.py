@@ -1,6 +1,6 @@
 # 仅提供1个uniprot id, 获取其结构文件(cif或pdb文件), 可以是PDB、AlphaFoldDB等数据库中的结构文件
 
-# 1. 如果是AlphaFoldDB
+# 1. 如果是AlphaFoldDB, 获取isoform1也就是主要蛋白质形态的cif文件
 # 参考: https://alphafold.ebi.ac.uk/api-docs
 
 import os
@@ -34,3 +34,63 @@ def fetch_pdb_from_alphafolddb(uniprot_id:str, pdb_save_dir:str = "."):
         print(f"✅ PDB file for {uniprot_id} saved to {pdb_save_file}")
     else:
         print(f"❌ Failed to download PDB file for {uniprot_id}. HTTP status code: {pdb_response.status_code}")
+
+
+####################################################################################################################################################
+
+
+# 2. 直接从uniprot数据库中依据REST API获取每一个uniprot id下对应PDB原始数据库的PDB id, chain id以及坐标范围
+# 暂时还拿不到结构, 只能拿到PDB id, 需要借助PDB api进一步获取该结构
+
+import requests
+import pandas as pd
+def fetch_PDB_id_from_uniprot(uniprot_ac: str) -> pd.DataFrame:
+    """   
+    Description
+    -----------
+    提供uniprot_ac, 获取对应的PDB ID、链ID和范围信息,并返回一个DataFrame.
+
+    Args
+    ----
+    uniprot_ac : str
+        UniProt的访问号.
+    
+    Returns
+    -------
+    pd.DataFrame
+        包含PDB ID、链ID和范围信息的DataFrame.
+
+    Notes
+    -----
+    - 1. 如果是单个元素, 可以将返回的DataFrame另存为csv文件
+    - 2. 如果是多个元素, 可以逐个uniprot_ac 调用该函数, 将输出的DataFrame合并后再另存为csv文件, 或者改写该函数, 
+    直接输入1个uniprot_ac列表, 然后直接结果上entry_list全append, 最后一次性转换为DataFrame并返回.
+    """
+    url = f"https://rest.uniprot.org/uniprotkb/{uniprot_ac}"
+    response = requests.get(url)
+
+    entry_list = []
+    if response.status_code == 200:
+        res = response.json()
+        for db_entry in res['uniProtKBCrossReferences']:
+            if db_entry["database"] == "PDB":
+                pdb_id = db_entry["id"]
+                for property_entry in db_entry["properties"]:
+                    if property_entry["key"] == "Chains":
+                        # E/F/G -> E,F,G
+                        chain_ids = ",".join(property_entry["value"].split("=")[0].split("/"))
+                        ranges = property_entry["value"].split("=")[1]
+
+                        # 添加到结果列表中
+                        entry_list.append({
+                            "pdb_id": pdb_id,
+                            "chain_ids": chain_ids,
+                            "ranges": ranges
+                        })
+        # 将结果列表转换为DataFrame
+        df_pdb = pd.DataFrame(entry_list)
+        return df_pdb
+    else:
+        print(f"Failed to fetch data for {uniprot_ac}. Status code: {response.status_code}")
+        return pd.DataFrame()
+
