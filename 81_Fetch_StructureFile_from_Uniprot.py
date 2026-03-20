@@ -39,7 +39,7 @@ def fetch_pdb_from_alphafolddb(uniprot_id:str, pdb_save_dir:str = "."):
 ####################################################################################################################################################
 
 
-# 2. 直接从uniprot数据库中依据REST API获取每一个uniprot id下对应PDB原始数据库的PDB id, chain id以及坐标范围
+# 2.1 直接从uniprot数据库中依据REST API获取每一个uniprot id下对应PDB原始数据库的PDB id, chain id以及坐标范围
 # 暂时还拿不到结构, 只能拿到PDB id, 需要借助PDB api进一步获取该结构
 
 import requests
@@ -94,3 +94,20 @@ def fetch_PDB_id_from_uniprot(uniprot_ac: str) -> pd.DataFrame:
         print(f"Failed to fetch data for {uniprot_ac}. Status code: {response.status_code}")
         return pd.DataFrame()
 
+
+
+# 2.2
+# 同样简化写法, 借助xref或database:pdb有
+def fetch_PDB_id_from_uniprot(uni_id: str) -> pd.DataFrame:
+    url = f"https://rest.uniprot.org/uniprotkb/search?query=reviewed:true+AND+accession_id:{uni_id}&fields=xref_pdb"
+    response = requests.get(url).json()
+    res = response['results'][0]['uniProtKBCrossReferences']
+    pdb_info_list = []
+    for db_entry in res:
+        pdb_id = db_entry["id"]
+        for property_entry in db_entry["properties"]:
+            if property_entry["key"] == "Chains":
+                chain_ids = ",".join(property_entry["value"].split("=")[0].split("/"))
+                ranges = property_entry["value"].split("=")[1]
+                pdb_info_list.append((pdb_id, chain_ids, ranges))
+    return pd.DataFrame(pdb_info_list, columns=["PDB ID", "Chain IDs", "Ranges"])
