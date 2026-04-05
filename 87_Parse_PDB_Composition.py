@@ -208,7 +208,9 @@ else:
             np_entity.append( f"{entry_id}_{entity_id}" ) 
     
 
+# 后续要分析，主要是查看前面输出的7个变量
 
+# df, entry_data, entity_dict, chimeric, np_entity, total_chains, all_uni_ids       
 
 
 
