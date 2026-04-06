@@ -465,4 +465,4 @@ if __name__ == "__main__":
 ######################################################################################################
 
 # 2.
-# 
+# https://github.com/CapraLab/cosmis/blob/2e7a4623ce64d99fde2728a2ecdd4e7f6cbffe3c/cosmis/mapping/sifts.py
