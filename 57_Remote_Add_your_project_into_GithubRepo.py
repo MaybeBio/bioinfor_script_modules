@@ -37,48 +37,38 @@ git push
 
 ##################################
 
-# 如果已经commit过了, 但是在push时因为文件很多而导致失败
+# 如果已经commit过了, 但是在push时因为文件很大而导致失败
 # 可以不上传更新大的文件，只更新其余的
 
 """
-由于 disobind_subsample 文件夹太大导致上传失败，现在需要将其从 Git 的暂存区（Staging Area）撤回，并确保它不会被包含在提交中。
 
-可以按照以下步骤在终端中操作：
 
-### 1. 从暂存区移除该文件夹
-运行以下命令，这会将该文件夹从 Git 的跟踪中移除，但**不会删除本地磁盘上的实际文件**。
+如果**不在乎**最近那次导致失败的 commit 信息，可以直接强行回退到成功 push 之前的状态，重新提交。
 
-```bash
-cd /data2/IDRInter
-git rm -r --cached data/processed/disobind_subsample
-```
+1.  **回退到上一个版本（HEAD~1 指向由于大文件失败的那个 commit）：**
+    ```bash
+    git reset --soft HEAD~1
+    ```
+2.  **强制从暂存区中移除该文件夹（不删除本地文件）：**
+    ```bash
+    git rm -r --cached data/processed/disobind_subsample
+    ```
+3.  **确保文件夹已在 `.gitignore` 中（防止再次被 add）：**
+    ```bash
+    echo "data/processed/disobind_subsample/" >> .gitignore
+    git add .gitignore
+    ```
+4.  **重新提交剩下的文件：**
+    ```bash
+    git commit -m "chore: remove large folder and update gitignore"
+    ```
+5.  **推送：**
+    ```bash
+    git push origin main
+    ```
 
-### 2. 将其添加到 `.gitignore`（防止以后再次被误添加）
-为了避免下次执行 `git add .` 时再次把这个大文件夹加进去，建议将其路径写入 `.gitignore` 文件：
+核心问题是 **“大文件已经存在于本地 .git 文件夹的历史对象中”**。
 
-```bash
-echo "data/processed/disobind_subsample/" >> .gitignore
-```
-
-### 3. 如果你已经做过了 Commit（可选）
-如果之前已经执行过 `git commit`（只是在 `push` 时失败），那么该文件夹的信息已经进入了本地历史记录。需要撤销最后一次提交但不删除代码更改：
-
-```bash
-# 撤回到上一个版本，保留所有代码更改（此时变回 add 之前的状态）
-git reset --soft HEAD~1
-
-# 然后重复第1步的命令来剔除大文件夹
-git rm -r --cached data/processed/disobind_subsample
-```
-
-### 总结
-执行完第 1 步和第 2 步后，你可以重新进行提交：
-```bash
-git add .
-git commit -m "Remove large folder from tracking and update gitignore"
-git push
-```
-
-这样，Git 就会忽略这个巨大的文件夹，只上传其他必要的文件。
+执行 `git reset --soft HEAD~1`，然后确保 `git status` 里那个大文件夹不再是绿色（暂存态），而是红色（未追踪态）或直接被 `.gitignore` 忽略，再重新 commit 即可。
 
 """
