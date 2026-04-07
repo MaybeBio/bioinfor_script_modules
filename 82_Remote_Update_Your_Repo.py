@@ -41,10 +41,10 @@ git add .
 # git update-index --no-assume-unchanged zt-monitor.sh
 
 
-  # 5. 提交变更并添加说明
-  # 总之前面的文件都已经 git add .了，无论是什么情况
-  git commit -m "xxxx"
+# 5. 提交变更并添加说明
+# 总之前面的文件都已经 git add .了，无论是什么情况
+git commit -m "xxxx"
 
-  # 6. 推送到远程 GitHub 仓库
-  # 将本地的提交推送到远程的默认分支（通常是 main 或 master）：
-  git push origin main
+# 6. 推送到远程 GitHub 仓库
+# 将本地的提交推送到远程的默认分支（通常是 main 或 master）：
+git push origin main
