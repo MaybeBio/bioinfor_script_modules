@@ -1,5 +1,7 @@
 # 参考：https://docs.python.org/zh-cn/3/library/logging.html
 # https://www.runoob.com/python3/python-logging.html
+# https://blog.csdn.net/weixin_62528784/article/details/159978711?sharetype=blogdetail&sharerId=159978711&sharerefer=PC&sharesource=weixin_62528784&spm=1011.2480.3001.8118
+
 
 # 1.
 # 简单配置
