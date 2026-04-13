@@ -454,5 +454,17 @@ for chunk in dirs:
 
             index = get_fandom(path_output, proteomeid, assemblyid, chunk, index)
 
+################################################################################################
 
+# 简单获取单条序列，为字典
+# 批量获取可以逐个调用，当然，还是建议使用前面的批量序列获取query
+def download_uniprot_fasta(uniprot_id: str) -> dict:
+    url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.fasta"
+    response = httpx.get(url)
+    response.raise_for_status()
+    fasta_content = response.text
+    # 解析FASTA格式
+    lines = fasta_content.splitlines()
+    sequence = "".join(lines[1:])  # 将序列行合并成一个字符串
+    return {"uniprot_id": uniprot_id, "sequence": sequence} 
 
