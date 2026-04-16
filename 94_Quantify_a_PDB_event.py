@@ -483,3 +483,358 @@ if __name__ == "__main__":
         to_parquet=False,
     )
     print(saved_paths)
+
+
+
+#################################################################################################
+
+# 2.
+# 直接本地mmcif文件构建
+
+from __future__ import annotations
+
+from itertools import combinations
+from pathlib import Path
+from typing import Dict, List, Optional
+import json
+
+import httpx
+import numpy as np
+import pandas as pd
+from Bio.PDB import MMCIFParser
+
+
+class StructureEventQuantizer:
+    """
+    结构事件量化器（纯结构本地索引版）。
+
+    设计原则
+    --------
+    1) 不依赖 PDBe API / SIFTS 在线映射。
+    2) 直接使用结构解析得到的 residue.id[1] 作为序列索引（seq_idx）。
+    3) 输出两张核心表：
+       - node_table: 每个建模残基 1 行。
+       - edge_table: 每对残基 1 行（带距离，可选阈值过滤）。
+    """
+
+    def __init__(
+        self,
+        root_dir: str = "/data2",
+        cif_subdir: str = "",
+        timeout: float = 30.0,
+    ) -> None:
+        self.root_dir = Path(root_dir)
+        self.cif_dir = self.root_dir / cif_subdir if cif_subdir else self.root_dir
+        self.cif_dir.mkdir(parents=True, exist_ok=True)
+        self.timeout = timeout
+
+    @staticmethod
+    def _norm_pdb_id(pdb_id: str) -> str:
+        return str(pdb_id).strip().upper()
+
+    def _find_local_cif(self, pdb_id: str) -> Optional[Path]:
+        pdb = self._norm_pdb_id(pdb_id)
+        candidates = [
+            self.cif_dir / f"{pdb}.cif",
+            self.cif_dir / f"{pdb.lower()}.cif",
+            self.cif_dir / f"{pdb}.mmcif",
+            self.cif_dir / f"{pdb.lower()}.mmcif",
+        ]
+        for p in candidates:
+            if p.exists():
+                return p
+        return None
+
+    def download_cif(self, pdb_id: str, overwrite: bool = False) -> Path:
+        """从 RCSB 下载 mmCIF 文件。"""
+        pdb = self._norm_pdb_id(pdb_id)
+        out_path = self.cif_dir / f"{pdb.lower()}.cif"
+
+        if out_path.exists() and not overwrite:
+            return out_path
+
+        url = f"https://files.rcsb.org/download/{pdb.lower()}.cif"
+        resp = httpx.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        out_path.write_bytes(resp.content)
+        return out_path
+
+    def _ensure_cif(self, pdb_id: str, download_if_missing: bool = True) -> Path:
+        local = self._find_local_cif(pdb_id)
+        if local is not None:
+            return local
+        if not download_if_missing:
+            raise FileNotFoundError(f"未找到本地 mmCIF 文件: {pdb_id}")
+        return self.download_cif(pdb_id)
+
+    def parse_mmcif_ca_residues(
+        self,
+        cif_path: str,
+        pdb_id: Optional[str] = None,
+        model_index: int = 0,
+    ) -> pd.DataFrame:
+        """
+        解析 mmCIF 建模残基（CA），构建节点表。
+
+        关键说明
+        --------
+        - seq_idx 直接来自 Bio.PDB 的 residue.id[1]。
+        - 这与您示例中的 res_id 一致，作为当前结构下的序列索引使用。
+        """
+        parser = MMCIFParser(QUIET=True)
+        structure = parser.get_structure("structure", cif_path)
+
+        models = list(structure.get_models())
+        if model_index >= len(models):
+            raise IndexError(f"model_index 越界: {model_index}, total={len(models)}")
+        model = models[model_index]
+
+        inferred_id = (pdb_id or structure.header.get("idcode") or Path(cif_path).stem[:4]).upper()
+
+        rows: List[Dict[str, object]] = []
+        for chain in model:
+            for residue in chain:
+                # 与你的示例一致：保留有 CA 的残基
+                if not residue.has_id("CA"):
+                    continue
+
+                # residue.id = (hetflag, resseq, icode)
+                # 这里直接用 resseq 作为 seq_idx
+                _, resseq, icode = residue.id
+                coord = residue["CA"].get_coord()
+
+                rows.append(
+                    {
+                        "pdb_id": inferred_id,
+                        "chain_id": str(chain.id),
+                        "residue_name": str(residue.get_resname()),
+                        "seq_idx": int(resseq),
+                        "auth_seq_id": int(resseq),
+                        "insertion_code": "" if icode in (" ", "") else str(icode),
+                        "ca_x": float(coord[0]),
+                        "ca_y": float(coord[1]),
+                        "ca_z": float(coord[2]),
+                    }
+                )
+
+        node_df = pd.DataFrame(rows)
+        if node_df.empty:
+            return node_df
+
+        # 排序后生成“链内连续索引”和“全局连续索引”，避免与 seq_idx 冲突
+        node_df = node_df.sort_values(["chain_id", "seq_idx", "insertion_code"]).reset_index(drop=True)
+        node_df["chain_node_idx0"] = node_df.groupby("chain_id").cumcount().astype(int)
+        node_df["chain_node_idx1"] = node_df["chain_node_idx0"] + 1
+        node_df["global_node_idx0"] = np.arange(len(node_df), dtype=int)
+        node_df["global_node_idx1"] = node_df["global_node_idx0"] + 1
+        node_df["CA_coord"] = node_df[["ca_x", "ca_y", "ca_z"]].values.tolist()
+        return node_df
+
+    @staticmethod
+    def _serialize_df_for_csv(df: pd.DataFrame) -> pd.DataFrame:
+        out = df.copy()
+        for col in out.columns:
+            if out[col].map(lambda x: isinstance(x, (list, tuple, dict))).any():
+                out[col] = out[col].map(
+                    lambda x: json.dumps(x, ensure_ascii=False) if isinstance(x, (list, tuple, dict)) else x
+                )
+        return out
+
+    def build_edge_table(
+        self,
+        node_df: pd.DataFrame,
+        inter_chain_only: bool = False,
+        distance_cutoff: Optional[float] = None,
+    ) -> pd.DataFrame:
+        """
+        构建边表（残基对距离）。
+
+        参数
+        ----
+        inter_chain_only:
+            True 仅保留链间边，False 同时包含链内边（链内去重，不含自环）。
+        distance_cutoff:
+            距离阈值（Å），None 表示不做过滤，保留全部候选边。
+        """
+        if node_df.empty:
+            return pd.DataFrame()
+
+        by_chain = {
+            cid: g.sort_values("chain_node_idx0").reset_index(drop=True)
+            for cid, g in node_df.groupby("chain_id")
+        }
+        chain_ids = sorted(by_chain.keys())
+
+        if inter_chain_only:
+            chain_pairs = list(combinations(chain_ids, 2))
+        else:
+            chain_pairs = []
+            for i, ci in enumerate(chain_ids):
+                for cj in chain_ids[i:]:
+                    chain_pairs.append((ci, cj))
+
+        edge_parts: List[pd.DataFrame] = []
+
+        for ci, cj in chain_pairs:
+            gi = by_chain[ci]
+            gj = by_chain[cj]
+
+            xi = gi[["ca_x", "ca_y", "ca_z"]].to_numpy(dtype=np.float32)
+            xj = gj[["ca_x", "ca_y", "ca_z"]].to_numpy(dtype=np.float32)
+            dmat = np.linalg.norm(xi[:, None, :] - xj[None, :, :], axis=2)
+
+            if ci == cj:
+                # 同一链只取上三角，避免重复和自环
+                ii, jj = np.triu_indices(len(gi), k=1)
+                dist = dmat[ii, jj]
+            else:
+                ii, jj = np.indices(dmat.shape)
+                ii = ii.ravel()
+                jj = jj.ravel()
+                dist = dmat.ravel()
+
+            if distance_cutoff is not None:
+                m = dist <= float(distance_cutoff)
+                ii = ii[m]
+                jj = jj[m]
+                dist = dist[m]
+
+            if len(dist) == 0:
+                continue
+
+            gi_chain_idx = gi["chain_node_idx0"].to_numpy(dtype=int)
+            gi_global_idx = gi["global_node_idx0"].to_numpy(dtype=int)
+            gi_seq_idx = gi["seq_idx"].to_numpy(dtype=int)
+            gi_resn = gi["residue_name"].to_numpy(dtype=object)
+
+            gj_chain_idx = gj["chain_node_idx0"].to_numpy(dtype=int)
+            gj_global_idx = gj["global_node_idx0"].to_numpy(dtype=int)
+            gj_seq_idx = gj["seq_idx"].to_numpy(dtype=int)
+            gj_resn = gj["residue_name"].to_numpy(dtype=object)
+
+            part = pd.DataFrame(
+                {
+                    "pdb_id": np.repeat(str(gi["pdb_id"].iat[0]), len(dist)),
+                    "chain_i": np.repeat(ci, len(dist)),
+                    "chain_node_idx0_i": gi_chain_idx[ii],
+                    "global_node_idx0_i": gi_global_idx[ii],
+                    "seq_idx_i": gi_seq_idx[ii],
+                    "residue_name_i": gi_resn[ii],
+                    "chain_j": np.repeat(cj, len(dist)),
+                    "chain_node_idx0_j": gj_chain_idx[jj],
+                    "global_node_idx0_j": gj_global_idx[jj],
+                    "seq_idx_j": gj_seq_idx[jj],
+                    "residue_name_j": gj_resn[jj],
+                    "distance": dist.astype(np.float32),
+                }
+            )
+            edge_parts.append(part)
+
+        if not edge_parts:
+            return pd.DataFrame(
+                columns=[
+                    "pdb_id",
+                    "chain_i",
+                    "chain_node_idx0_i",
+                    "global_node_idx0_i",
+                    "seq_idx_i",
+                    "residue_name_i",
+                    "chain_j",
+                    "chain_node_idx0_j",
+                    "global_node_idx0_j",
+                    "seq_idx_j",
+                    "residue_name_j",
+                    "distance",
+                ]
+            )
+
+        edge_df = pd.concat(edge_parts, ignore_index=True)
+        return edge_df
+
+    def quantize_from_pdb_id(
+        self,
+        pdb_id: str,
+        model_index: int = 0,
+        inter_chain_only: bool = False,
+        distance_cutoff: Optional[float] = None,
+        download_if_missing: bool = True,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        主入口：给定 PDB ID，输出节点表与边表（纯结构索引）。
+        """
+        pdb = self._norm_pdb_id(pdb_id)
+        cif_path = self._ensure_cif(pdb, download_if_missing=download_if_missing)
+
+        node_table = self.parse_mmcif_ca_residues(
+            cif_path=str(cif_path),
+            pdb_id=pdb,
+            model_index=model_index,
+        )
+
+        edge_table = self.build_edge_table(
+            node_df=node_table,
+            inter_chain_only=inter_chain_only,
+            distance_cutoff=distance_cutoff,
+        )
+
+        return {
+            "node_table": node_table,
+            "edge_table": edge_table,
+        }
+
+    def save_quantized_tables(
+        self,
+        result: Dict[str, pd.DataFrame],
+        output_prefix: str,
+        to_csv: bool = True,
+        to_pickle: bool = True,
+        to_parquet: bool = False,
+    ) -> Dict[str, str]:
+        """保存量化结果。"""
+        base = Path(output_prefix)
+        base.parent.mkdir(parents=True, exist_ok=True)
+
+        saved: Dict[str, str] = {}
+        for name, table in result.items():
+            if not isinstance(table, pd.DataFrame):
+                continue
+
+            if to_csv:
+                csv_path = base.with_name(f"{base.name}_{name}.csv")
+                self._serialize_df_for_csv(table).to_csv(csv_path, index=False)
+                saved[f"{name}_csv"] = str(csv_path)
+
+            if to_pickle:
+                pkl_path = base.with_name(f"{base.name}_{name}.pkl")
+                table.to_pickle(pkl_path)
+                saved[f"{name}_pkl"] = str(pkl_path)
+
+            if to_parquet:
+                parquet_path = base.with_name(f"{base.name}_{name}.parquet")
+                table.to_parquet(parquet_path, index=False)
+                saved[f"{name}_parquet"] = str(parquet_path)
+
+        return saved
+
+
+if __name__ == "__main__":
+    # 示例：不限制距离，输出全边表
+    quantizer = StructureEventQuantizer(root_dir="/data2")
+    out = quantizer.quantize_from_pdb_id(
+        pdb_id="7W1M",
+        inter_chain_only=False,
+        distance_cutoff=None,
+        download_if_missing=True,
+    )
+
+    print("node_table shape:", out["node_table"].shape)
+    print("edge_table shape:", out["edge_table"].shape)
+
+    saved_paths = quantizer.save_quantized_tables(
+        result=out,
+        output_prefix="/data2/7w1m_class_quantized_local",
+        to_csv=True,
+        to_pickle=True,
+        to_parquet=False,
+    )
+    print(saved_paths)
