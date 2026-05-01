@@ -80,3 +80,4 @@ gh release create v0.1.0 dist/* --title "v0.1.0 Initial Release" --notes "First 
 
 # 然后手动编辑title之类
 # 手动上传whl和tar压缩包两个文件
+# 当然本身会生成两个仓库源码压缩包 zip和tar
