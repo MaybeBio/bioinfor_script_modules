@@ -77,3 +77,6 @@ gh release create v0.1.0 dist/* --title "v0.1.0 Initial Release" --notes "First 
 (这里需要gh登入, 但是gh不确定)
 
 # 如果这里gh不成功, 就试试1的方法git tag+git push然后手动上传
+
+# 然后手动编辑title之类
+# 手动上传whl和tar压缩包两个文件
