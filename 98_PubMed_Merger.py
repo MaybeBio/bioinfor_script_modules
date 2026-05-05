@@ -1000,3 +1000,116 @@ def parse_and_merge_pubmed_meta_and_content(
     merger.print_statistics()
 
     return stats
+
+
+# for CLI usage
+@app.command("pubmed-merge")
+def merge_cmd(
+    paper_dir: str = typer.Argument(..., help="Directory containing paper data (pubmed/year/pmid/structure)."),
+    output: str = typer.Argument(..., help="Output file path for merged data."),
+    pmid_file: Optional[str] = typer.Option(None, "--pmid-file", "-p", help="File containing PMIDs to merge (one per line). If not specified, merge all papers in directory."),
+    mode: str = typer.Option("full", "--mode", "-m", help="Merge mode: 'meta' (metadata only), 'full' (metadata + content)."),
+    format: str = typer.Option("md", "--format", "-f", help="Output format: 'md' (Markdown), 'jsonl' (JSON Lines), 'txt' (plain text)."),
+    profile: str = typer.Option("analysis", "--profile", help="Output profile: 'analysis' (full metadata for modules), 'llm' (LLM-focused compact output)."),
+    include_sections: Optional[str] = typer.Option(None, "--include-sections", help="Comma-separated section names to include from parsed JSON, e.g. 'abstract,introduction,results'."),
+    metadata_fields: Optional[str] = typer.Option(None, "--metadata-fields", help="Comma-separated metadata field paths, e.g. 'identity,content.keywords,links'. Use 'all' for full metadata."),
+    include_links: Optional[bool] = typer.Option(None, "--include-links/--exclude-links", help="Whether to include links in llm profile output. Ignored in analysis profile."),
+    text_source: str = typer.Option("parsed-json-first", "--text-source", help="Text source priority: 'parsed-json-first' or 'parsed-md-first'."),
+):
+    """
+    Merge PubMed paper data into unified format for AI analysis.
+
+    This command merges paper metadata and/or full text content into a single
+    file optimized for AI processing and analysis.
+
+    Examples:
+      - Merge all papers with content to Markdown:
+        paperflow merge ./papers_dir ./merged_papers.md --mode full --format md
+
+      - Merge papers from a PMID list file:
+        paperflow merge ./papers_dir ./selected_papers.md --pmid-file pmids.txt --mode full
+    """
+    # Map mode string to enum
+    mode_map = {
+        'meta': MergeMode.METADATA_ONLY,
+                'full': MergeMode.METADATA_CONTENT,
+    }
+
+    if mode not in mode_map:
+        typer.echo(f"Error: Invalid mode '{mode}'. Use: meta, full")
+        raise typer.Exit(code=1)
+
+    merge_mode = mode_map[mode]
+
+    # Map format string to enum
+    format_map = {
+        'md': OutputFormat.MARKDOWN,
+        'jsonl': OutputFormat.JSONL,
+        'txt': OutputFormat.PLAIN_TEXT
+    }
+
+    if format not in format_map:
+        typer.echo(f"Error: Invalid format '{format}'. Use: md, jsonl, txt")
+        raise typer.Exit(code=1)
+
+    output_format = format_map[format]
+
+    # Map profile string to enum
+    profile_map = {
+        'analysis': OutputProfile.ANALYSIS,
+        'llm': OutputProfile.LLM,
+    }
+
+    if profile not in profile_map:
+        typer.echo(f"Error: Invalid profile '{profile}'. Use: analysis, llm")
+        raise typer.Exit(code=1)
+
+    output_profile = profile_map[profile]
+
+    text_source_map = {
+        'parsed-json-first': TextSourcePriority.PARSED_JSON_FIRST,
+        'parsed-md-first': TextSourcePriority.PARSED_MD_FIRST,
+    }
+
+    if text_source not in text_source_map:
+        typer.echo("Error: Invalid text-source. Use: parsed-json-first, parsed-md-first")
+        raise typer.Exit(code=1)
+
+    include_sections_list = [item.strip() for item in include_sections.split(',')] if include_sections else None
+    metadata_fields_list = [item.strip() for item in metadata_fields.split(',')] if metadata_fields else None
+
+    # Create merge config
+    config = MergeConfig(
+        mode=merge_mode,
+        output_format=output_format,
+        output_profile=output_profile,
+        include_sections=include_sections_list,
+        include_metadata_fields=metadata_fields_list,
+        include_links_in_llm=(include_links if include_links is not None else False),
+        text_source_priority=text_source_map[text_source],
+    )
+
+    # Create merger and execute
+    merger = PaperMerger(config)
+
+    typer.echo(f"Merging papers from: {paper_dir}")
+
+    try:
+        if pmid_file:
+            # Merge from PMID list file
+            stats = merger.merge_from_file_list(paper_dir, pmid_file, output)
+        else:
+            # Merge all papers in directory
+            stats = merger.merge_from_directory(paper_dir, output)
+
+        merger.print_statistics()
+
+        if stats['successful'] > 0:
+            typer.secho(f"Successfully merged {stats['successful']} papers.", fg=typer.colors.GREEN)
+
+        if stats['failed'] > 0:
+            typer.secho(f"{stats['failed']} papers failed to merge.", fg=typer.colors.YELLOW)
+
+    except Exception as e:
+        typer.echo(f"Error during merge: {e}")
+        raise typer.Exit(code=1)
