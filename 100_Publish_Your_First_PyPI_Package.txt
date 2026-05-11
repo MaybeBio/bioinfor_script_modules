@@ -1,0 +1,31 @@
+# github和pypi不同，前者发布可以参考 P61
+
+# 所有打包教程参考：https://packaging.python.org/en/latest/tutorials/packaging-projects/（官方）
+# 非正规补充：https://blog.csdn.net/qq_40738764/article/details/134263322等等等等
+# 第1个实例可以参考：https://github.com/MaybeBio/AlphaFold3-SeqVisToolkit
+
+# ⚠️ 以后的更新固化流程：
+
+1. 第一阶段：源码发布（推送到 GitHub）
+（1）修改代码和版本号（比如在 pyproject.toml 里改）：toml文件的配置参考上述官网教程，或af3示例
+静态版本号：在pyproject.toml中修改 __version__
+
+如何动态版本：
+比如说动态读取tag（先推送tag），或者目前暂时在src/包名字/__init__.py中每次commit修改__version__名字，
+当然需要.toml中标注路径，比如说：
+##########
+dynamic = ["version"] # 替代 __version__
+
+[tool.hatch.version]
+path = "src/alphafold3_seqvis_toolkit/__init__.py"
+#########
+
+（2）git add + git commit照常
+（3）github上的release：
+git tag v0.2.1（打上标签）
+git push origin main --tags（把最新代码和标签推送到 GitHub）/ git push --tags
+（4）在 GitHub 上去点一个 Release：在tag里generate，关联tag写一些更新日志之类
+
+2. 第二阶段：打包分发（上传到 PyPI）
+7. python3 -m build （在本地打包，生成 dist/ 文件夹）。
+8. twine upload dist/* （上传包到 PyPI）。
