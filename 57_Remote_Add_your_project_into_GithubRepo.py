@@ -6,6 +6,8 @@
 # (4)如果懒的话: 直接暴力删除源文件, 本来我们只上传脚本到github, 数据文件放云盘或本地, 重新push
 # (5)如果是一些ipynb比较大, 都是一些图标或者输出, 尽量都clear output, 让输出不要超过20MB左右
 
+🌟🌟🌟 一，借助git
+
 1, cd /该项目文件夹 
 git init
 2, 检查并提交代码
@@ -72,3 +74,25 @@ git push
 执行 `git reset --soft HEAD~1`，然后确保 `git status` 里那个大文件夹不再是绿色（暂存态），而是红色（未追踪态）或直接被 `.gitignore` 忽略，再重新 commit 即可。
 
 """
+
+
+
+=======================================================================================================================
+
+
+🌟🌟🌟 二，借助gh
+
+# 前面那种方式需要手动在网页端创建仓库
+# 借助gh可以全程不离开terminal
+# 先进入仓库同名文件夹 Y
+
+git init
+git add .
+git commit -m "xxxx"
+(1) gh repo create Y --public --source=. --remote=origin --push
+(2) # 有时候（1）不一定有效，就还得借助git
+git branch -M main
+gh repo create Y --public
+git remote add origin https://github.com/你的用户名/Y.git
+git push -u origin main
+
