@@ -97,3 +97,70 @@ echo "Done. Output: $output"
 # 简单用法示例
 chmod +x xhs.sh
 zsh xhs.sh "如何将自己的想法转变为1个课题, 1个idea, 找到研究方向" 5 开题.md 20
+
+
+#######################################################################################
+
+# 3.
+# 有反爬
+
+#!/usr/bin/env zsh
+set -euo pipefail
+
+# 简化检验：需 jq 或 python
+command -v xhs >/dev/null 2>&1 || { echo "xhs not found"; exit 1; }
+
+QUERY="$1"; PAGES="$2"; OUTPUT="${3:-开题.md}"; READ_COUNT="${4:-20}"
+: > "$OUTPUT"
+
+rand_sleep() { sleep_time=$(awk -v a=0.8 -v b=2 'BEGIN{srand(); print a + (b-a)*rand()}'); sleep $sleep_time; }
+
+read_with_retry() {
+  local idx=$1
+  local tries=0 max=5 backoff=2
+  while (( tries < max )); do
+    # capture both stdout+stderr
+    out_and_err="$(xhs read "$idx" --json 2>&1)" || true
+    if printf "%s" "$out_and_err" | grep -qi "Captcha triggered"; then
+      tries=$((tries+1))
+      wait_secs=$(( backoff ** tries ))
+      echo "Captcha detected for item $idx, retry $tries/$max — sleeping ${wait_secs}s" >&2
+      sleep $wait_secs
+      continue
+    fi
+    # if output looks like json, return it
+    if printf "%s" "$out_and_err" | head -1 | grep -q '^{'; then
+      printf "%s" "$out_and_err"
+      return 0
+    fi
+    # otherwise treat as failure and retry a little
+    tries=$((tries+1))
+    sleep 1
+  done
+  return 1
+}
+
+for ((page=1; page<=PAGES; page++)); do
+  echo "# Search: $QUERY — Page $page" >> "$OUTPUT"
+  xhs search "$QUERY" --sort popular --page "$page" >/dev/null || true
+  for ((i=1; i<=READ_COUNT; i++)); do
+    if json="$(read_with_retry $i)"; then
+      # 提取 title & desc（优先用 jq）
+      if command -v jq >/dev/null 2>&1; then
+        title=$(printf "%s" "$json" | jq -r '.data.items[0].note_card.title // "无标题"')
+        desc=$(printf "%s" "$json" | jq -r '.data.items[0].note_card.desc // ""')
+      else
+        title=$(printf "%s" "$json" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("data",{}).get("items",[{}])[0].get("note_card",{}).get("title","无标题"))')
+        desc=$(printf "%s" "$json" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("data",{}).get("items",[{}])[0].get("note_card",{}).get("desc",""))')
+      fi
+      printf "\n\n---\n\n## Page %d - Item %d\n\n### %s\n\n%s\n" "$page" "$i" "$title" "$desc" >> "$OUTPUT"
+    else
+      printf "\n\n---\n\n## Page %d - Item %d\n\n[xhs read %d failed or captcha persisted]\n" "$page" "$i" "$i" >> "$OUTPUT"
+    fi
+    rand_sleep
+  done
+  # 每翻页后做更长等待，降低触发概率
+  sleep 5
+done
+
+echo "Done. Output: $OUTPUT"
