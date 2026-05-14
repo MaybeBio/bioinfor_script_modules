@@ -2,6 +2,16 @@
 # 可以参考小红书上的一些经验、帖子，
 # 使用CLI工具 https://github.com/jackwener/xhs-cli
 
+
+# 目前每一次 qrcode登入，如果出问题
+# 暂时如下操作：先清一遍缓存
+rm -rf ~/.cache/camoufox
+xhs login --qrcode
+# 目前暂时是headless登入、清空插件列表
+# 在~/.local/share/uv/tools/xiaohongshu-cli/lib/python3.12/site-packages/xhs_cli/qr_login.py文件下，359行左右，将原始代码修改为
+# with Camoufox(headless=True, addons=[]) as browser:
+
+
 # 1.
 # 目前每一条阅读记录都需要下面方式才能够展开正文
 # 见issue：https://github.com/jackwener/xiaohongshu-cli/issues/55
