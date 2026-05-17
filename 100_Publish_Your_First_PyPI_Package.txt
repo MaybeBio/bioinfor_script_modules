@@ -28,5 +28,5 @@ git push origin main --tags（把最新代码和标签推送到 GitHub）/ git p
 
 2. 第二阶段：打包分发（上传到 PyPI）
 （1） python3 -m build （在本地打包，生成 dist/ 文件夹）。
-（2） twine upload dist/* （上传包到 PyPI）。
+（2） twine upload dist/* （上传包到 PyPI），一般只支持上传max 100mb，超过了可能因为源码文件过大，这个时候除了修改原始仓库文件，比如说删除之外，还可以进一步只上传whl文件（twine upload dist/*.whl）
 （3） 可以在.gitignore中加入dist/，以及平时的一些cache、env之类
