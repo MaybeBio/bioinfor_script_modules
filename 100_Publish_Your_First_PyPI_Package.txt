@@ -7,6 +7,7 @@
 # ⚠️ 以后的更新固化流程：
 
 1. 第一阶段：源码发布（推送到 GitHub）
+（0）先git status看看到底目前状态如何，有时候长时间没关注某一个项目都不知道改动了什么
 （1）修改代码和版本号（比如在 pyproject.toml 里改）：toml文件的配置参考上述官网教程，或af3示例
 静态版本号：在pyproject.toml中修改 __version__
 
@@ -21,6 +22,7 @@ path = "src/alphafold3_seqvis_toolkit/__init__.py"
 #########
 
 （2）git add + git commit照常
+一般建议对于git add的文件，先看看diff在哪里，比如说： git add . + git diff --staged README.md，看看已暂存的文件和上一个远程推送的仓库版本差异在哪里，确定没问题再推送
 （3）github上的release：
 git tag v0.2.1（打上标签）
 git push origin main --tags（把最新代码和标签推送到 GitHub）/ git push --tags
