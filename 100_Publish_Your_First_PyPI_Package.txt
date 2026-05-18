@@ -32,3 +32,10 @@ git push origin main --tags（把最新代码和标签推送到 GitHub）/ git p
 （1） python3 -m build （在本地打包，生成 dist/ 文件夹）。
 （2） twine upload dist/* （上传包到 PyPI），一般只支持上传max 100mb，超过了可能因为源码文件过大，这个时候除了修改原始仓库文件，比如说删除之外，还可以进一步只上传whl文件（twine upload dist/*.whl）
 （3） 可以在.gitignore中加入dist/，以及平时的一些cache、env之类
+
+
+3. 第三阶段：实际测试一下
+（1）如果你之前pip install -e .，也就是可编辑模式（软链接）本地包，先卸载掉
+比如说我当前目录 /data2/pyPaperFlow，我在这里装还是在这里卸载，我install的包名就是看pyproject.toml文件中的[project]name，然后再
+pip uninstall -y pyPaperFlow
+（2）再试试新的pip安装
