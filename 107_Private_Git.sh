@@ -12,3 +12,9 @@ git config user.email "你的邮箱"
 # git config --list
 # 再操作在其他地方
 git add . && git -c user.name="你的名字" -c user.email="你的邮箱" commit -m "提交说明" && git push
+
+# 3. 如果是新仓库
+git init
+git branch -M main
+git remote add origin 新建的远程仓库地址(gh存疑)
+git add . && git -c user.name="你的名字" -c user.email="你的邮箱" commit -m "提交说明" && git push -u origin main
