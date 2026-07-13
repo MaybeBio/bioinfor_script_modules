@@ -96,3 +96,14 @@ gh repo create Y --public
 git remote add origin https://github.com/你的用户名/Y.git
 git push -u origin main
 
+
+=======================================================================================================================
+
+# commit已经提交，包含pdf等大文件，push推送失败
+# 直接修改最后一次 commit
+# 1. 从版本库索引里移除 PDF，只脱离 Git 跟踪，本地文件保留
+git rm --cached books/*.pdf
+# 2. 把这次删除操作合并进上一次提交，覆盖原有 commit
+git commit --amend --no-edit
+# 3. 然后正常推送 git push
+
