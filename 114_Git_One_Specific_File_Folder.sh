@@ -12,5 +12,9 @@ git archive --remote=https://github.com/Lightning-AI/pytorch-lightning.git maste
 
 # 2. 或使用 https://download-directory.github.io/?url=
 
-# 3. 浅克隆
+# 3. 浅克隆 + 稀疏检出
 git clone --depth 1 仓库地址
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/Lightning-AI/pytorch-lightning.git
+cd pytorch-lightning
+git sparse-checkout set examples/fabric/reinforcement_learning
