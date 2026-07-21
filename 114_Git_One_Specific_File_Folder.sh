@@ -1,4 +1,6 @@
-# 远程仓库直接导出（无需克隆仓库，轻量化首选）
+# 获取某个仓库某个子文件、子文件夹
+
+# 1. 远程仓库直接导出（无需克隆仓库，轻量化首选）
 git archive --remote=仓库地址 分支:仓库内路径 | tar -x
 
 # ⚠️ 注意git版本更新 https://www.datacamp.com/tutorial/git-update
@@ -8,4 +10,7 @@ git archive --remote=仓库地址 分支:仓库内路径 | tar -x
 # 仓库地址已知，分支为master，仓库内相对路径也已知
 git archive --remote=https://github.com/Lightning-AI/pytorch-lightning.git master:examples/fabric/reinforcement_learning | tar -x
 
-# 或使用 https://download-directory.github.io/?url=
+# 2. 或使用 https://download-directory.github.io/?url=
+
+# 3. 浅克隆
+git clone --depth 1 仓库地址
