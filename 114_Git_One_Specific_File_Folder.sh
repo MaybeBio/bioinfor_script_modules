@@ -4,6 +4,7 @@ git archive --remote=仓库地址 分支:仓库内路径 | tar -x
 # 例如lightning仓库下的某一个子文件夹 https://github.com/Lightning-AI/pytorch-lightning/tree/master/examples/fabric/reinforcement_learning
 # 仓库地址已知，分支为master，仓库内相对路径也已知
 # ⚠️ 注意git版本更新 https://www.datacamp.com/tutorial/git-update
+# 注意更新docker源，git版本限制可以直接上游PPA（ppa:git-core/ppa） https://git-scm.com/install/linux
 git archive --remote=https://github.com/Lightning-AI/pytorch-lightning.git master:examples/fabric/reinforcement_learning | tar -x
 
 # 或使用 https://download-directory.github.io/?url=
