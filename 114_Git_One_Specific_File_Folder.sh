@@ -14,6 +14,7 @@ git archive --remote=https://github.com/Lightning-AI/pytorch-lightning.git maste
 
 # 3. 浅克隆 + 稀疏检出
 git clone --depth 1 仓库地址
+# 留下部分顶层文件，可以后处理
 git clone --depth 1 --filter=blob:none --sparse \
   https://github.com/Lightning-AI/pytorch-lightning.git
 cd pytorch-lightning
