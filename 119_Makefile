@@ -1,5 +1,6 @@
 # adapt from http://github.com/ashleve/lightning-hydra-template/blob/main/Makefile
 # 语法糖，命令套壳
+# 使用时rename成 Makefile
 
 help:  ## Show help
 	@grep -E '^[.a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
