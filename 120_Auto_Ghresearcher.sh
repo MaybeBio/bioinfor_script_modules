@@ -101,3 +101,10 @@ ghfollow() {
 
     rm -f "${tmp_raw}"
 }
+
+# 使用示例
+# 手动执行，不看log
+ghfollw -3
+# 手动执行，但是存个log后续再看
+ghfollow -2 --log
+# 如果要在crontab或systemd中定时调用，都带上--log，这样每天至少1个log，起来就看
