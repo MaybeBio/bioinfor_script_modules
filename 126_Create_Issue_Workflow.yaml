@@ -1,0 +1,26 @@
+# 参考 https://github.com/zezhishao/DailyArXiv/tree/master/.github
+# issue 可以作为 daily更新内容承载页，标记好日期即可
+
+# 1️⃣ 原始版本（dailyarxiv中）
+    - name: Create an issue to notify
+      uses: JasonEtco/create-an-issue@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# 2️⃣ node.js 版本问题，修改
+# Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: JasonEtco/create-an-issue@v2
+
+- name: Create an issue to notify
+      # gh CLI 预装在 runner 上（node24 原生），替代已弃用的 JasonEtco/create-an-issue@v2 -(node20)                                                                                  
+  run: |                                                                              
+      template=".github/ISSUE_TEMPLATE.md"                                              
+      title="$(sed -n 's/^title: *//p' "$template" | head -1)"                                 
+      labels="$(sed -n 's/^labels: *//p' "$template" | head -1)"                               
+      # 去掉 frontmatter 块，保留正文作为 issue body                                           
+      awk 'c==2{print} /^---$/{c++}' "$template" > /tmp/issue_body.md                          
+      gh issue create --title "$title" --label "$labels" --body-file /tmp/issue_body.md        
+  uses: JasonEtco/create-an-issue@v2                                                         
+  env:                                                                                       
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}                                                    
+
+
