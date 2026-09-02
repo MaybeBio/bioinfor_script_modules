@@ -18,8 +18,7 @@
       labels="$(sed -n 's/^labels: *//p' "$template" | head -1)"                               
       # 去掉 frontmatter 块，保留正文作为 issue body                                           
       awk 'c==2{print} /^---$/{c++}' "$template" > /tmp/issue_body.md                          
-      gh issue create --title "$title" --label "$labels" --body-file /tmp/issue_body.md        
-  uses: JasonEtco/create-an-issue@v2                                                         
+      gh issue create --title "$title" --label "$labels" --body-file /tmp/issue_body.md                                                                
   env:                                                                                       
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}                                                    
 
