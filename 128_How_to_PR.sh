@@ -8,6 +8,7 @@ git clone xxx
 # origin 默认是我们clone下来的仓库，fork
 # upstream 是我们手动新增，指向原始别人的仓库（约定俗成upstream，当然也可以叫source或者改成其他之类的）
 # 目的是为了让我们的本地git知道原始仓库在哪里，下面才能fetch它的代码
+# git remote -v 检查过upstream有就行
 git remote add upstream 官方仓库地址
 
 # ---------------------------
