@@ -48,6 +48,7 @@ git commit -m "fix: xxx问题"
 # 9. push，提PR（把我们的分支推送到我们自己的fork仓库（origin））
 git push origin my-fix
 # 10. 推送完成后，去 GitHub 网页，就能看到提示：Compare & pull request，点它创建 PR，目标分支选原仓库的 main
+# 11. 在被merge PR之后，我们可以删除提交的该分支，以及本地fork的仓库
 
 # 我们再理一下：
 # upstream/main：我们 fetch 下来缓存的「原始仓库 main」快照
