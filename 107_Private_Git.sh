@@ -18,3 +18,10 @@ git init
 git branch -M main
 git remote add origin 新建的远程仓库地址(gh存疑)
 git add . && git -c user.name="你的名字" -c user.email="你的邮箱" commit -m "提交说明" && git push -u origin main
+
+
+
+# 4. 如果我们连本地仓库配置都不想写入，一次commit临时指定身份，完全不写配置文件（适合极短期一次性操作）
+git -c user.name="Your Name" -c user.email="you@example.com" commit -m "prepare initial structure"
+
+
