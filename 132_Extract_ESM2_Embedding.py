@@ -62,7 +62,45 @@ def calculate_representation(model, alphabet, data, device, output_dir):
         if device == 'cuda':
             torch.cuda.empty_cache()
 
+###########################################################################################################################
+
+# 3. idpfold1
+# https://github.com/Junjie-Zhu/IDPFold/blob/ba40f40c3542b307c75d51b32665de23f89b4c47/src/utils/esm_extract.py#L4
+
+# Returns sequence labels, sequences, and their ESM representations
+def calculate_representation(model, alphabet, data, device):
+    batch_converter = alphabet.get_batch_converter()
+    model.eval()
+
+    sequence_labels, sequence_strs, sequence_representations = [], [], []
+    total_sequences, num_batches = len(data), len(data) // BATCH_SIZE + (len(data) % BATCH_SIZE != 0)
+
+    for batch in range(num_batches):
+        start_idx, end_idx = batch * BATCH_SIZE, (batch + 1) * BATCH_SIZE
+        batch_labels, batch_strs, batch_tokens = batch_converter(data[start_idx:end_idx])
+        batch_tokens, batch_lens = batch_tokens.to(device), (batch_tokens != alphabet.padding_idx).sum(1)
+
+        with torch.no_grad():
+            token_representations = model(batch_tokens, repr_layers=[33], return_contacts=True)["representations"][33]
+
+        for i, tokens_len in enumerate(batch_lens):
+            # sequence_representations.append(token_representations[i, 1 : tokens_len - 1].mean(0).cpu())
+            sequence_representations.append(token_representations[i, 1: tokens_len - 1].cpu())
+            sequence_labels.append(batch_labels[i])
+            sequence_strs.append(batch_strs[i])
+
+        print(f"Batch {batch + 1}/{num_batches} processed in {time.time() - START_TIME} seconds."
+              f" Progress: {100.0 * (batch + 1) / num_batches:.2f}%", end="\r")
+
+        del batch_labels, batch_strs, batch_tokens, token_representations
+        torch.cuda.empty_cache()
+
+    return sequence_labels, sequence_strs, sequence_representations
 
 
+# Saves the ESM representation, sequence labels, and sequences to a pickle file
+def save_representation(sequence_labels, sequence_strs, representation, output_file):
+    with open(output_file, 'wb') as f:
+        pickle.dump({"labels": sequence_labels, "sequences": sequence_strs, "representations": representation}, f)
 
 
