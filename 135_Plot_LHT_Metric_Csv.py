@@ -1,14 +1,17 @@
 # plot lht template metrics file set by csv logger
 
-"""Plot training curves (val AUROC + val AUPRC vs epoch) from a Lightning ``metrics.csv``.
+"""Plot training curves (loss / AUROC / AUPRC, each train vs val) from a Lightning ``metrics.csv``.
 
     python src/plot_metrics.py                          # auto-find the latest metrics.csv
     python src/plot_metrics.py --input path/metrics.csv --output curves.png
-    python src/plot_metrics.py --show-best --baseline-auroc 0.594 --baseline-auprc 0.0044
+    python src/plot_metrics.py --mark-best --baseline-auroc 0.594 --baseline-auprc 0.0044
 
-Reads the LHT CSV (``epoch,step,train/*,val/*``) where each epoch has a val row and a
-train row interleaved; keeps the val rows and plots the two ranking metrics on a shared
-x-axis with twin y-axes (they live on very different scales: AUROC ~0.5-0.8, AUPRC ~1e-3-2e-2).
+Three side-by-side panels — ``Loss (BCE)``, ``AUROC``, ``AUPRC`` — each overlaying the
+train (blue) and val (orange) curve, so under-/over-fitting is visible at a glance.
+
+The LHT CSV interleaves two rows per epoch: a val row (``val/*`` filled, ``train/*``
+empty) and a train row (``train/*`` filled, ``val/*`` empty). The two are split here and
+re-indexed by epoch before plotting.
 """
 
 import argparse
@@ -18,6 +21,11 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
+
+TRAIN_COLOR = "#1f77b4"
+VAL_COLOR = "#ff7f0e"
+REF_COLOR = "#7f7f7f"
+BASE_COLOR = "#2ca02c"
 
 
 def find_latest_metrics(search_dir: Path | None = None) -> Path:
@@ -29,12 +37,29 @@ def find_latest_metrics(search_dir: Path | None = None) -> Path:
     return candidates[-1]
 
 
-def load_val_rows(csv_path: str | Path) -> pd.DataFrame:
-    """Load the CSV and keep only the per-epoch val rows (drop the train rows).
+def load_curves(csv_path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split the interleaved CSV into ``(train, val)`` frames indexed by epoch.
 
-    The LHT CSV interleaves a val row and a train row per epoch; the train row has empty
-    ``val/*`` cells, so dropping rows with a missing ``val/auroc`` isolates the val curve.
+    The val row and the train row of one epoch carry disjoint columns, so each frame keeps
+    only the rows where its own metrics are present. Duplicate rows for the same epoch
+    (e.g. Lightning's pre-training sanity-check pass) are collapsed by keeping the last.
     """
+    df = pd.read_csv(csv_path)
+    needed = {"train/loss", "val/loss"}
+    if not needed <= set(df.columns):
+        raise ValueError(f"{csv_path}: missing columns {sorted(needed - set(df.columns))}")
+
+    train = df.dropna(subset=["train/loss"]).groupby("epoch", sort=True).last()
+    val = df.dropna(subset=["val/loss"]).groupby("epoch", sort=True).last()
+    if val.empty:
+        raise ValueError(f"{csv_path}: no val rows found")
+    if train.empty:
+        raise ValueError(f"{csv_path}: no train rows found")
+    return train, val
+
+
+def load_val_rows(csv_path: str | Path) -> pd.DataFrame:
+    """Return only the per-epoch val rows (kept for callers that only need val)."""
     df = pd.read_csv(csv_path)
     if "val/auroc" not in df.columns:
         raise ValueError(f"{csv_path}: no 'val/auroc' column (expected LHT metrics.csv)")
@@ -44,65 +69,71 @@ def load_val_rows(csv_path: str | Path) -> pd.DataFrame:
     return val
 
 
+def _panel(ax, train: pd.DataFrame, val: pd.DataFrame, trk: str, vk: str, title: str,
+           show_best: bool = False, ref_line: float | None = None,
+           ref_label: str = "random", baseline: float | None = None) -> None:
+    """Draw one train-vs-val panel."""
+    if trk in train.columns:
+        ax.plot(train.index, train[trk], color=TRAIN_COLOR, lw=1.6, marker="o", ms=3,
+                label="train")
+    if vk in val.columns:
+        ax.plot(val.index, val[vk], color=VAL_COLOR, lw=1.6, marker="o", ms=3,
+                label="val")
+    if show_best:
+        bk = f"{vk}/best"
+        if bk in val.columns:
+            ax.step(val.index, val[bk], color=VAL_COLOR, lw=0.9, ls="--", alpha=0.45,
+                    label="val (running best)")
+    if ref_line is not None:
+        ax.axhline(ref_line, color=REF_COLOR, lw=0.9, ls=":", alpha=0.9)
+        ax.text(0.99, ref_line, ref_label, color=REF_COLOR, fontsize=8,
+                va="bottom", ha="right", transform=ax.get_yaxis_transform())
+    if baseline is not None:
+        ax.axhline(baseline, color=BASE_COLOR, lw=0.9, ls=":", alpha=0.9)
+        ax.text(0.99, baseline, "baseline", color=BASE_COLOR, fontsize=8,
+                va="bottom", ha="right", transform=ax.get_yaxis_transform())
+
+    ax.set_title(title, fontsize=11)
+    ax.set_xlabel("epoch", fontsize=10)
+    ax.tick_params(labelsize=9)
+    ax.legend(fontsize=8, loc="best", frameon=True, framealpha=0.9)
+
+
 def plot_metrics(
+    train: pd.DataFrame,
     val: pd.DataFrame,
     out_path: str | Path,
     show_best: bool = False,
     baseline_auroc: float | None = None,
     baseline_auprc: float | None = None,
+    mark_best: bool = False,
     title: str | None = None,
     dpi: int = 200,
 ) -> Path:
-    """Render the dual-axis AUROC/AUPRC training curves to ``out_path`` (PNG or PDF)."""
+    """Render three side-by-side panels (Loss / AUROC / AUPRC), each train vs val."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    epoch = val["epoch"].to_numpy()
-    auroc = val["val/auroc"].to_numpy()
-    auprc = val["val/auprc"].to_numpy()
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.6))
 
-    fig, ax1 = plt.subplots(figsize=(6.8, 4.2))
-    ax2 = ax1.twinx()
+    _panel(axes[0], train, val, "train/loss", "val/loss", "Loss (BCE)", show_best=show_best)
+    _panel(axes[1], train, val, "train/auroc", "val/auroc", "AUROC", show_best=show_best,
+           ref_line=0.5, ref_label="random", baseline=baseline_auroc)
+    _panel(axes[2], train, val, "train/auprc", "val/auprc", "AUPRC", show_best=show_best,
+           baseline=baseline_auprc)
 
-    # AUROC on the left axis (0.5-0.8 range of interest)
-    (l1,) = ax1.plot(epoch, auroc, color="#1f77b4", lw=1.8, label="val AUROC")
-    if show_best and "val/auroc/best" in val.columns:
-        best = val["val/auroc/best"].to_numpy()
-        ax1.step(epoch, best, color="#1f77b4", lw=0.9, ls="--", alpha=0.45, label="AUROC (running best)")
-
-    # AUPRC on the right axis (tiny values, ~1e-3)
-    (l2,) = ax2.plot(epoch, auprc, color="#d62728", lw=1.8, label="val AUPRC")
-    if show_best and "val/auprc/best" in val.columns:
-        best = val["val/auprc/best"].to_numpy()
-        ax2.step(epoch, best, color="#d62728", lw=0.9, ls="--", alpha=0.45, label="AUPRC (running best)")
-
-    # reference lines: random AUROC = 0.5 always; optional baseline method
-    ax1.axhline(0.5, color="grey", lw=0.9, ls=":", alpha=0.8)
-    ax1.text(epoch[0], 0.505, "random", color="grey", fontsize=8, va="bottom")
-    if baseline_auroc is not None:
-        ax1.axhline(baseline_auroc, color="#2ca02c", lw=0.9, ls=":", alpha=0.8)
-        ax1.text(epoch[0], baseline_auroc + 0.003, "baseline", color="#2ca02c", fontsize=8, va="bottom")
-    if baseline_auprc is not None:
-        ax2.axhline(baseline_auprc, color="#2ca02c", lw=0.9, ls=":", alpha=0.8)
-
-    # axis cosmetics
-    ax1.set_xlabel("epoch", fontsize=11)
-    ax1.set_ylabel("val AUROC", color="#1f77b4", fontsize=11)
-    ax2.set_ylabel("val AUPRC", color="#d62728", fontsize=11)
-    ax1.tick_params(labelsize=9, colors="#1f77b4")
-    ax2.tick_params(labelsize=9, colors="#d62728")
-    ax1.set_xlim(epoch[0], epoch[-1])
-    ax1.grid(True, alpha=0.25, lw=0.5)
-
-    lines = [l1, l2]
-    if show_best:
-        lines += [ax1.lines[-1]] if "val/auroc/best" in val.columns else []
-    ax1.legend(lines, [l.get_label() for l in lines], fontsize=9, loc="lower right")
+    if mark_best and "val/loss" in val.columns:
+        best_epoch = int(val["val/loss"].idxmin())
+        for ax in axes:
+            ax.axvline(best_epoch, color="#444444", lw=0.9, ls="--", alpha=0.7)
+        axes[0].text(0.98, 0.02, f"dashed: selected ckpt (epoch {best_epoch})",
+                     fontsize=8, color="#444444", ha="right", va="bottom",
+                     transform=axes[0].transAxes)
 
     if title is not None:
-        ax1.set_title(title, fontsize=11)
+        fig.suptitle(title, fontsize=12)
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,34 +144,38 @@ def plot_metrics(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Plot val AUROC + AUPRC training curves from metrics.csv.")
+    ap = argparse.ArgumentParser(
+        description="Plot loss / AUROC / AUPRC training curves (train vs val) from metrics.csv.")
     ap.add_argument("--input", default=None,
                     help="path to metrics.csv (default: latest under logs/train/runs/)")
     ap.add_argument("--output", default=None,
                     help="output image (default: <input dir>/training_curves.png)")
     ap.add_argument("--show-best", action="store_true",
-                    help="overlay the running-best staircase for each metric")
+                    help="overlay the running-best staircase on the val curves")
+    ap.add_argument("--mark-best", action="store_true",
+                    help="mark the epoch with the lowest val/loss (the selected checkpoint)")
     ap.add_argument("--baseline-auroc", type=float, default=None,
-                    help="draw a reference line at this AUROC (e.g. 0.594 for ESM-cosine)")
+                    help="reference line on the AUROC panel (e.g. 0.594 for ESM-cosine)")
     ap.add_argument("--baseline-auprc", type=float, default=None,
-                    help="draw a reference line at this AUPRC (e.g. 0.0044 for ESM-cosine)")
-    ap.add_argument("--title", default=None, help="optional plot title")
+                    help="reference line on the AUPRC panel (e.g. 0.0044 for ESM-cosine)")
+    ap.add_argument("--title", default=None, help="optional figure title")
     ap.add_argument("--dpi", type=int, default=200)
     args = ap.parse_args()
 
     csv_path = Path(args.input) if args.input else find_latest_metrics()
-    val = load_val_rows(csv_path)
+    train, val = load_curves(csv_path)
 
     out = Path(args.output) if args.output else csv_path.parent / "training_curves.png"
     path = plot_metrics(
-        val, out,
+        train, val, out,
         show_best=args.show_best,
         baseline_auroc=args.baseline_auroc,
         baseline_auprc=args.baseline_auprc,
+        mark_best=args.mark_best,
         title=args.title,
         dpi=args.dpi,
     )
-    print(f"saved {path}  ({len(val)} epochs)")
+    print(f"saved {path}  ({len(val)} val epochs, {len(train)} train epochs)")
 
 
 if __name__ == "__main__":
